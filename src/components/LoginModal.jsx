@@ -1,37 +1,51 @@
 import { useState } from "react";
+import { getUser, createUser } from "../api";
 
 export default function LoginModal({ onLogin }) {
-  const [username, setUsername] = useState("");
+  const [inputName, setInputName] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!username.trim()) return;
-    onLogin(username.trim());
-  };
+  async function handleLogin() {
+    if (!inputName.trim()) return;
+    setLoading(true);
+
+    try {
+      // Attempt to fetch existing user
+      let user = await getUser(inputName.trim());
+      
+      // If user not found, create a new one
+      if (!user) {
+        user = await createUser({ name: inputName.trim() });
+      }
+
+      // Notify parent component
+      onLogin(user);
+    } catch (err) {
+      console.error("Login failed", err);
+      alert("Login failed. Check backend logs.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
-      <div className="bg-white rounded-xl shadow-lg p-8 w-96">
-        <h2 className="text-2xl font-bold mb-4 text-center">Welcome!</h2>
-        <p className="mb-6 text-center text-gray-600">
-          Enter your username to continue or create a new account.
-        </p>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <input
-            type="text"
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            className="border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            autoFocus
-          />
-          <button
-            type="submit"
-            className="bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700 transition"
-          >
-            Continue
-          </button>
-        </form>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl p-6 w-[350px] shadow-lg">
+        <h2 className="text-xl font-bold mb-4 text-center">Login / Create User</h2>
+        <input
+          type="text"
+          value={inputName}
+          onChange={(e) => setInputName(e.target.value)}
+          placeholder="Enter your name"
+          className="w-full p-2 border rounded mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button
+          onClick={handleLogin}
+          disabled={loading}
+          className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-blue-400"
+        >
+          {loading ? "Processing..." : "Continue"}
+        </button>
       </div>
     </div>
   );
