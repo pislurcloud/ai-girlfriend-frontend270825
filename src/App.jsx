@@ -1,21 +1,39 @@
-import { useState } from "react";
-import CharacterSelector from "./components/CharacterSelector";
-import AddCharacter from "./components/AddCharacter";
-import ChatBox from "./components/ChatBox";
+import { useEffect, useState } from "react";
+import { getCharacters } from "./api";
+import Sidebar from "./components/Sidebar";
+import ChatWindow from "./components/ChatWindow";
 
-const USER_ID = "<your_sample_user_id_here>"; // replace with a valid user_id from your DB
+const USER_ID = import.meta.env.VITE_USER_ID || "test-user-123"; // set in Vercel
 
-function App() {
-  const [selectedCharacter, setSelectedCharacter] = useState("");
+export default function App() {
+  const [characters, setCharacters] = useState([]);
+  const [selected, setSelected] = useState(null);
+
+  async function loadCharacters() {
+    try {
+      const data = await getCharacters();
+      setCharacters(data);
+      // auto-select first character if none selected
+      if (!selected && data?.length) setSelected(data[0]);
+    } catch (e) {
+      console.error("Failed to load characters", e);
+    }
+  }
+
+  useEffect(() => { loadCharacters(); }, []);
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1>AI Girlfriend Chat</h1>
-      <CharacterSelector selectedCharacter={selectedCharacter} onSelect={setSelectedCharacter} />
-      <AddCharacter onAdd={() => setSelectedCharacter("")} />
-      {selectedCharacter && <ChatBox userId={USER_ID} characterId={selectedCharacter} />}
+    <div className="flex h-screen">
+      <Sidebar
+        characters={characters}
+        onSelect={setSelected}
+        selectedId={selected?.id}
+        reload={loadCharacters}
+      />
+      <ChatWindow
+        userId={USER_ID}
+        character={selected}
+      />
     </div>
   );
 }
-
-export default App;
