@@ -1,22 +1,25 @@
 import axios from "axios";
 
-const API_BASE = import.meta.env.VITE_API_BASE;
+const BASE_URL = "https://ai-girlfriend-backend26082025.onrender.com";
 
-export const getCharacters = async () => {
-  const res = await axios.get(`${API_BASE}/characters`);
+export async function getCharacters() {
+  const res = await axios.get(`${BASE_URL}/characters`);
   return res.data;
-};
+}
 
-export const sendChat = async ({ user_id, character_id, message }) => {
-  const res = await axios.post(`${API_BASE}/chat`, {
+export async function addCharacter(name) {
+  const res = await axios.post(`${BASE_URL}/characters`, {
+    name,
+    persona: { name, style: "kind and supportive" }
+  });
+  return res.data;
+}
+
+export async function sendMessage(user_id, character_id, message) {
+  const res = await axios.post(`${BASE_URL}/chat`, {
     user_id,
     character_id,
     message
   });
   return res.data;
-};
-
-export const getMemories = async ({ user_id, character_id }) => {
-  const res = await axios.post(`${API_BASE}/memories`, { user_id, character_id });
-  return res.data;
-};
+}

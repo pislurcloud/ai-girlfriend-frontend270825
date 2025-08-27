@@ -1,37 +1,33 @@
-import { useState, useEffect } from "react";
-import { sendChat, getMemories } from "../api/backend";
+import { useState } from "react";
+import { sendMessage } from "../api/backend";
 
-export default function ChatBox({ user_id, character_id }) {
+export default function ChatBox({ userId, characterId }) {
+  const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
 
-  useEffect(() => {
-    if (user_id && character_id) {
-      getMemories({ user_id, character_id }).then(setMessages);
-    }
-  }, [user_id, character_id]);
-
-  const handleSend = async () => {
-    if (!input) return;
-    const res = await sendChat({ user_id, character_id, message: input });
-    setMessages([...messages, { message: input, response: res.reply }]);
-    setInput("");
-  };
+  async function handleSend() {
+    if (!message || !characterId) return;
+    const res = await sendMessage(userId, characterId, message);
+    setMessages([...messages, { user: message, ai: res.reply }]);
+    setMessage("");
+  }
 
   return (
-    <div>
-      <div style={{ maxHeight: "300px", overflowY: "scroll" }}>
+    <div style={{ marginTop: "20px" }}>
+      <div style={{ maxHeight: "300px", overflowY: "scroll", border: "1px solid #ccc", padding: "10px" }}>
         {messages.map((m, i) => (
           <div key={i}>
-            <strong>You:</strong> {m.message} <br />
-            <strong>AI:</strong> {m.response}
+            <b>You:</b> {m.user} <br />
+            <b>AI:</b> {m.ai}
+            <hr />
           </div>
         ))}
       </div>
       <input
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        placeholder="Type your message..."
+        type="text"
+        placeholder="Type a message..."
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
       />
       <button onClick={handleSend}>Send</button>
     </div>
