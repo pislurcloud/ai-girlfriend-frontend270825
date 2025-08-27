@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
-import { getCharacters } from "./api";
+import { getCharacters, getUser, createUser } from "./api";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import LoginModal from "./components/LoginModal";
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState(null); // logged-in user
+  const [user, setUser] = useState(null);        // logged-in user object
   const [characters, setCharacters] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [loginOpen, setLoginOpen] = useState(true);
 
+  // Load characters from backend
   async function loadCharacters() {
     try {
       const data = await getCharacters();
@@ -19,10 +21,29 @@ export default function App() {
     }
   }
 
-  useEffect(() => { loadCharacters(); }, []);
+  useEffect(() => {
+    if (user) loadCharacters();
+  }, [user]);
 
-  if (!currentUser) {
-    return <LoginModal onLogin={setCurrentUser} />;
+  // Handle login or new user creation
+  const handleLogin = async (username) => {
+    if (!username?.trim()) return;
+    try {
+      let existing = await getUser(username);
+      if (!existing) {
+        // create new user if doesn't exist
+        existing = await createUser(username);
+      }
+      setUser(existing);
+      setLoginOpen(false);
+    } catch (e) {
+      console.error("Login failed", e);
+      alert("Failed to login. Try again.");
+    }
+  };
+
+  if (loginOpen) {
+    return <LoginModal onLogin={handleLogin} />;
   }
 
   return (
@@ -34,7 +55,7 @@ export default function App() {
         reload={loadCharacters}
       />
       <ChatWindow
-        userId={currentUser.id}
+        userId={user.id}          // pass the logged-in user's ID
         character={selected}
       />
     </div>
