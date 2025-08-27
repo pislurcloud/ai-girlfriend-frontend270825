@@ -1,44 +1,43 @@
 import axios from "axios";
 
-// Set this in Vercel: VITE_API_BASE=https://ai-girlfriend-backend26082025.onrender.com
+// Base API
 const API = axios.create({
   baseURL: import.meta.env.VITE_API_BASE,
 });
 
-// ----------------- Users -----------------
+// ----------------- User APIs -----------------
 
 /**
- * Create a new user in the backend
+ * Create a new user
  * @param {string} username
- * @returns {object} created user object
+ * @returns {Object} user {id, username}
  */
-export const createUser = async (username) => {
+export async function createUser(username) {
   try {
-    const payload = { username };
-    const res = await API.post("/users", payload);
-    return res.data.user;
+    const res = await API.post("/users", { username });
+    return res.data;
   } catch (err) {
-    console.error("Failed to create user:", err);
+    console.error("Failed to create user:", err.response?.data || err.message);
     throw err;
   }
-};
+}
 
 /**
- * Get an existing user by username
+ * Fetch existing user by username
  * @param {string} username
- * @returns {object|null} user object or null if not found
+ * @returns {Object} user {id, username}
  */
-export const getUser = async (username) => {
+export async function getUser(username) {
   try {
-    const res = await API.get(`/users?username=${encodeURIComponent(username)}`);
-    return res.data.user || null;
+    const res = await API.get("/users", { params: { username } });
+    return res.data;
   } catch (err) {
-    console.error("Failed to get user:", err);
-    return null;
+    console.error("Failed to fetch user:", err.response?.data || err.message);
+    throw err;
   }
-};
+}
 
-// ----------------- Characters -----------------
+// ----------------- Character APIs -----------------
 
 export async function getCharacters() {
   try {
@@ -57,12 +56,12 @@ export const createCharacter = async ({ name, style, bio }) => {
   return (await API.post("/characters", payload)).data;
 };
 
-// ----------------- Memories -----------------
+// ----------------- Memories APIs -----------------
 
 export const fetchMemories = async ({ user_id, character_id }) =>
   (await API.post("/memories", { user_id, character_id })).data;
 
-// ----------------- Chat -----------------
+// ----------------- Chat API -----------------
 
 export const chat = async ({ user_id, character_id, message }) =>
   (await API.post("/chat", { user_id, character_id, message })).data;
