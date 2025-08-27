@@ -1,62 +1,38 @@
 import { useState } from "react";
 
 export default function LoginModal({ onLogin }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [username, setUsername] = useState("");
 
-  async function handleSubmit(e) {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    if (!name.trim() || !email.trim()) return;
-    setLoading(true);
-    try {
-      // Call backend to create/fetch user
-      const res = await fetch(`${import.meta.env.VITE_API_BASE}/users`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email }),
-      });
-      const data = await res.json();
-      onLogin(data.user); // pass back user object { id, name, email }
-    } catch (err) {
-      console.error("Login failed", err);
-      alert("Login failed. Check backend logs.");
-    } finally {
-      setLoading(false);
-    }
-  }
+    if (!username.trim()) return;
+    onLogin(username.trim());
+  };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white p-6 rounded-lg shadow-md w-80 flex flex-col gap-4"
-      >
-        <h2 className="text-lg font-bold">Login / Sign Up</h2>
-        <input
-          type="text"
-          placeholder="Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="border p-2 rounded"
-          required
-        />
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="border p-2 rounded"
-          required
-        />
-        <button
-          type="submit"
-          className="bg-blue-600 text-white p-2 rounded disabled:opacity-50"
-          disabled={loading}
-        >
-          {loading ? "Logging in..." : "Login / Sign Up"}
-        </button>
-      </form>
+    <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50">
+      <div className="bg-white rounded-xl shadow-lg p-8 w-96">
+        <h2 className="text-2xl font-bold mb-4 text-center">Welcome!</h2>
+        <p className="mb-6 text-center text-gray-600">
+          Enter your username to continue or create a new account.
+        </p>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <input
+            type="text"
+            placeholder="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            autoFocus
+          />
+          <button
+            type="submit"
+            className="bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700 transition"
+          >
+            Continue
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
