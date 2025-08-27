@@ -11,7 +11,22 @@ const API = axios.create({
 // POST   /memories            { user_id, character_id } -> returns array of { message, response, created_at? }
 // POST   /chat                { user_id, character_id, message } -> { reply }
 
-export const getCharacters = async () => (await API.get("/characters")).data;
+
+// src/api.js
+export async function getCharacters() {
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_BASE}/characters`);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch characters: ${res.statusText}`);
+    }
+    const data = await res.json();
+    return data.characters || [];  // unwraps the { characters: [...] }
+  } catch (err) {
+    console.error("Error fetching characters:", err);
+    return [];
+  }
+}
+
 
 export const createCharacter = async ({ name, style, bio }) => {
   const payload = { name, persona: { name, style, bio } };

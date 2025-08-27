@@ -1,31 +1,30 @@
-import { useState } from "react";
-import AddCharacterModal from "./AddCharacterModal";
+import { useEffect, useState } from "react";
+import { getCharacters } from "../api";
 
-export default function Sidebar({ characters, onSelect, setCharacters }) {
-  const [open, setOpen] = useState(false);
+export default function Sidebar() {
+  const [characters, setCharacters] = useState([]);
+
+  useEffect(() => {
+    async function loadCharacters() {
+      try {
+        const chars = await getCharacters();
+        console.log("Characters API result:", chars); // 👀 debug
+        setCharacters(Array.isArray(chars) ? chars : []);
+      } catch (err) {
+        console.error("Failed to load characters:", err);
+      }
+    }
+    loadCharacters();
+  }, []);
 
   return (
-    <div className="w-64 bg-white border-r shadow-md flex flex-col">
-      <div className="p-4 font-bold text-xl border-b">AI Characters</div>
-      <div className="flex-1 overflow-y-auto">
-        {characters.map((c) => (
-          <div
-            key={c.id}
-            onClick={() => onSelect(c)}
-            className="p-3 cursor-pointer hover:bg-gray-100"
-          >
-            <div className="font-semibold">{c.name}</div>
-            <div className="text-sm text-gray-600">{c.persona}</div>
-          </div>
-        ))}
-      </div>
-      <button
-        onClick={() => setOpen(true)}
-        className="p-3 bg-blue-500 text-white hover:bg-blue-600"
-      >
-        ➕ Add Character
-      </button>
-      {open && <AddCharacterModal setOpen={setOpen} setCharacters={setCharacters} />}
+    <div className="sidebar">
+      <h2>Characters</h2>
+      {characters.length > 0 ? (
+        characters.map((c) => <div key={c.id}>{c.name}</div>)
+      ) : (
+        <p>No characters found</p>
+      )}
     </div>
   );
 }
