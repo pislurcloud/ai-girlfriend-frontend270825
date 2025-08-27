@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { getCharacters } from "./api";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
-
-const USER_ID = import.meta.env.VITE_USER_ID || "test-user-123"; // set in Vercel
+import LoginModal from "./components/LoginModal";
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(null); // logged-in user
   const [characters, setCharacters] = useState([]);
   const [selected, setSelected] = useState(null);
 
@@ -13,7 +13,6 @@ export default function App() {
     try {
       const data = await getCharacters();
       setCharacters(data);
-      // auto-select first character if none selected
       if (!selected && data?.length) setSelected(data[0]);
     } catch (e) {
       console.error("Failed to load characters", e);
@@ -21,6 +20,10 @@ export default function App() {
   }
 
   useEffect(() => { loadCharacters(); }, []);
+
+  if (!currentUser) {
+    return <LoginModal onLogin={setCurrentUser} />;
+  }
 
   return (
     <div className="flex h-screen">
@@ -31,7 +34,7 @@ export default function App() {
         reload={loadCharacters}
       />
       <ChatWindow
-        userId={USER_ID}
+        userId={currentUser.id}
         character={selected}
       />
     </div>
