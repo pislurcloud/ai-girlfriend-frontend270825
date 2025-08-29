@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, Plus, User, Bot, Settings, Image, Mic, MicOff } from 'lucide-react';
 
 // Mock API functions - replace with your actual API calls
-const API_BASE = process.env.VITE_API_BASE || 'http://localhost:8000';
+// const API_BASE = process.env.VITE_API_BASE || 'http://localhost:8000';
+
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 
 const apiCall = async (endpoint, method = 'GET', data = null, user = null) => {
