@@ -49,10 +49,25 @@ const AICompanionApp = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  //useEffect(() => {
+    //scrollToBottom();
+  //}, [messages]);
+
+
+  // Auto scroll effect (already there)
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
+// Load characters when user logs in
+  useEffect(() => {
+    if (user?.id) {
+      loadCharacters();
+    }
+  }, [user]);
+
+
+  
   // Authentication states
   const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
   const [authError, setAuthError] = useState('');
