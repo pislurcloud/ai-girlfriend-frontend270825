@@ -59,10 +59,10 @@ const AICompanionApp = () => {
     try {
       setIsLoading(true);
       setAuthError('');
-      const userData = await apiCall(`/users/login`, 'POST', { username, password });
+      const userData = await apiCall(`/users/login`, 'POST', { username, password }, user);
       setUser(userData);
       setShowLoginModal(false);
-      loadCharacters();
+      loadCharacters(userData);
     } catch (error) {
       setAuthError('Invalid username or password');
     } finally {
@@ -75,10 +75,10 @@ const AICompanionApp = () => {
     try {
       setIsLoading(true);
       setAuthError('');
-      const userData = await apiCall('/users/register', 'POST', { username, password, email });
+      const userData = await apiCall('/users/register', 'POST', { username, password, email }, user);
       setUser(userData);
       setShowLoginModal(false);
-      loadCharacters();
+      loadCharacters(userData);
     } catch (error) {
       setAuthError(error.response?.data?.detail || 'Registration failed. Username might already exist.');
     } finally {
