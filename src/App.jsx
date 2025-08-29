@@ -4,20 +4,21 @@ import { Send, Plus, User, Bot, Settings, Image, Mic, MicOff } from 'lucide-reac
 // Mock API functions - replace with your actual API calls
 const API_BASE = process.env.VITE_API_BASE || 'http://localhost:8000';
 
-const apiCall = async (endpoint, method = 'GET', data = null) => {
+
+const apiCall = async (endpoint, method = 'GET', data = null, user = null) => {
   try {
     const config = {
       method,
       headers: { 'Content-Type': 'application/json' }
     };
-    
+
     // Add JWT token if user is logged in
     if (user?.token) {
       config.headers.Authorization = `Bearer ${user.token}`;
     }
-    
+
     if (data) config.body = JSON.stringify(data);
-    
+
     const response = await fetch(`${API_BASE}${endpoint}`, config);
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
