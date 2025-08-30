@@ -1,11 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Plus, User, Bot, Settings, Image, Mic, MicOff } from 'lucide-react';
-
-// Mock API functions - replace with your actual API calls
-// const API_BASE = process.env.VITE_API_BASE || 'http://localhost:8000';
+import { Send, Plus, User, Bot, Settings, Image, Mic, MicOff, Camera, Palette, Loader } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
-
 
 const apiCall = async (endpoint, method = 'GET', data = null, user = null) => {
   try {
@@ -14,7 +10,6 @@ const apiCall = async (endpoint, method = 'GET', data = null, user = null) => {
       headers: { 'Content-Type': 'application/json' }
     };
 
-    // Add JWT token if user is logged in
     if (user?.token) {
       config.headers.Authorization = `Bearer ${user.token}`;
     }
@@ -42,37 +37,26 @@ const AICompanionApp = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(true);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const messagesEndRef = useRef(null);
 
-  // Auto scroll to bottom
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  //useEffect(() => {
-    //scrollToBottom();
-  //}, [messages]);
-
-
-  // Auto scroll effect (already there)
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-// Load characters when user logs in
   useEffect(() => {
     if (user?.id) {
       loadCharacters();
     }
   }, [user]);
 
-
-  
-  // Authentication states
-  const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
+  const [authMode, setAuthMode] = useState('login');
   const [authError, setAuthError] = useState('');
 
-  // Login existing user
   const handleLogin = async (username, password) => {
     try {
       setIsLoading(true);
@@ -88,7 +72,6 @@ const AICompanionApp = () => {
     }
   };
 
-  // Register new user
   const handleRegister = async (username, password, email) => {
     try {
       setIsLoading(true);
@@ -104,7 +87,6 @@ const AICompanionApp = () => {
     }
   };
 
-  // Load user-specific characters
   const loadCharacters = async () => {
     try {
       const data = await apiCall(`/characters/user/${user.id}`);
@@ -122,7 +104,6 @@ const AICompanionApp = () => {
     }
   };
 
-  // Load conversation history
   const loadConversation = async (characterId) => {
     if (!user?.id || !characterId) return;
     
@@ -136,7 +117,11 @@ const AICompanionApp = () => {
       if (Array.isArray(data)) {
         data.forEach(row => {
           if (row.message) messageHistory.push({ sender: 'user', content: row.message });
-          if (row.response) messageHistory.push({ sender: 'ai', content: row.response });
+          if (row.response) {
+            const aiMessage = { sender: 'ai', content: row.response };
+            if (row.image_url) aiMessage.image_url = row.image_url;
+            messageHistory.push(aiMessage);
+          }
         });
       }
       setMessages(messageHistory);
@@ -146,7 +131,6 @@ const AICompanionApp = () => {
     }
   };
 
-  // Send message
   const sendMessage = async () => {
     if (!inputMessage.trim() || !selectedCharacter || !user) return;
 
@@ -162,10 +146,17 @@ const AICompanionApp = () => {
         message: userMessage
       });
 
-      setMessages(prev => [...prev, { 
+      const aiMessage = { 
         sender: 'ai', 
         content: response.reply || 'Sorry, I didn\'t understand that.' 
-      }]);
+      };
+      
+      // Add image if AI generated one
+      if (response.image_url) {
+        aiMessage.image_url = response.image_url;
+      }
+
+      setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
       setMessages(prev => [...prev, { 
         sender: 'ai', 
@@ -176,14 +167,24 @@ const AICompanionApp = () => {
     }
   };
 
-  // Create character (user-specific)
   const createCharacter = async (characterData) => {
     try {
       setIsLoading(true);
-      await apiCall('/characters', 'POST', {
-        ...characterData,
-        user_id: user.id  // Associate character with current user
-      });
+      
+      // Use enhanced character creation endpoint
+      const payload = {
+        user_id: user.id,
+        name: characterData.name,
+        persona: {
+          name: characterData.name,
+          style: characterData.style,
+          bio: characterData.bio
+        },
+        appearance: characterData.appearance || {},
+        generate_avatar: characterData.generateAvatar !== false
+      };
+
+      await apiCall('/characters/enhanced', 'POST', payload);
       setShowCreateModal(false);
       await loadCharacters();
     } catch (error) {
@@ -193,7 +194,18 @@ const AICompanionApp = () => {
     }
   };
 
-  // Logout function
+  const generateCharacterAvatar = async (characterId) => {
+    try {
+      setIsGeneratingImage(true);
+      await apiCall(`/characters/${characterId}/generate-avatar`, 'POST', { user_id: user.id });
+      await loadCharacters();
+    } catch (error) {
+      alert('Failed to generate avatar. Please try again.');
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+
   const handleLogout = () => {
     setUser(null);
     setCharacters([]);
@@ -202,7 +214,6 @@ const AICompanionApp = () => {
     setShowLoginModal(true);
   };
 
-  // Select character
   const selectCharacter = (character) => {
     setSelectedCharacter(character);
     loadConversation(character.id);
@@ -312,82 +323,216 @@ const AICompanionApp = () => {
     );
   };
 
-  // Create Character Modal
+  // Enhanced Create Character Modal
   const CreateCharacterModal = () => {
     const [formData, setFormData] = useState({
       name: '',
       style: 'friendly and supportive',
-      bio: ''
+      bio: '',
+      appearance: {
+        age: '25',
+        gender: 'person',
+        hair_color: 'brown',
+        style: 'modern casual',
+        clothing: 'stylish outfit'
+      },
+      generateAvatar: true
     });
 
     const handleSubmit = () => {
       if (!formData.name.trim()) return;
-      createCharacter({
-        name: formData.name,
-        persona: {
-          name: formData.name,
-          style: formData.style,
-          bio: formData.bio
-        }
-      });
+      createCharacter(formData);
     };
 
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-        <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl">
-          <h2 className="text-2xl font-bold mb-6 bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-            Create New Companion
-          </h2>
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+              <Palette className="w-6 h-6 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+              Create New Companion
+            </h2>
+          </div>
           
-          <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
-                className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
-                placeholder="e.g., Sarah, Alex"
-              />
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Basic Information */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <User className="w-5 h-5" />
+                  Basic Information
+                </h3>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Name *</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                  placeholder="e.g., Sarah, Alex, Maya"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Personality Style</label>
+                <input
+                  type="text"
+                  value={formData.style}
+                  onChange={(e) => setFormData({...formData, style: e.target.value})}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                  placeholder="e.g., playful and witty, romantic and caring"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Background & Interests</label>
+                <textarea
+                  value={formData.bio}
+                  onChange={(e) => setFormData({...formData, bio: e.target.value})}
+                  rows={3}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                  placeholder="Tell me about their interests, background, hobbies..."
+                />
+              </div>
             </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Personality Style</label>
-              <input
-                type="text"
-                value={formData.style}
-                onChange={(e) => setFormData({...formData, style: e.target.value})}
-                className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
-                placeholder="e.g., playful, romantic, supportive"
-              />
+
+            {/* Appearance Details */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <Camera className="w-5 h-5" />
+                  Appearance Details
+                </h3>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Age</label>
+                  <input
+                    type="text"
+                    value={formData.appearance.age}
+                    onChange={(e) => setFormData({
+                      ...formData, 
+                      appearance: {...formData.appearance, age: e.target.value}
+                    })}
+                    className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                    placeholder="25"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Gender</label>
+                  <select
+                    value={formData.appearance.gender}
+                    onChange={(e) => setFormData({
+                      ...formData, 
+                      appearance: {...formData.appearance, gender: e.target.value}
+                    })}
+                    className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                  >
+                    <option value="person">Person</option>
+                    <option value="woman">Woman</option>
+                    <option value="man">Man</option>
+                    <option value="non-binary person">Non-binary</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Hair Color</label>
+                <select
+                  value={formData.appearance.hair_color}
+                  onChange={(e) => setFormData({
+                    ...formData, 
+                    appearance: {...formData.appearance, hair_color: e.target.value}
+                  })}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                >
+                  <option value="brown">Brown</option>
+                  <option value="black">Black</option>
+                  <option value="blonde">Blonde</option>
+                  <option value="red">Red</option>
+                  <option value="auburn">Auburn</option>
+                  <option value="silver">Silver</option>
+                  <option value="blue">Blue</option>
+                  <option value="pink">Pink</option>
+                  <option value="purple">Purple</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Style</label>
+                <select
+                  value={formData.appearance.style}
+                  onChange={(e) => setFormData({
+                    ...formData, 
+                    appearance: {...formData.appearance, style: e.target.value}
+                  })}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                >
+                  <option value="modern casual">Modern Casual</option>
+                  <option value="elegant formal">Elegant Formal</option>
+                  <option value="artistic bohemian">Artistic Bohemian</option>
+                  <option value="sporty active">Sporty Active</option>
+                  <option value="vintage retro">Vintage Retro</option>
+                  <option value="minimalist chic">Minimalist Chic</option>
+                  <option value="gothic alternative">Gothic Alternative</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Clothing</label>
+                <input
+                  type="text"
+                  value={formData.appearance.clothing}
+                  onChange={(e) => setFormData({
+                    ...formData, 
+                    appearance: {...formData.appearance, clothing: e.target.value}
+                  })}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                  placeholder="e.g., cozy sweater, business suit, summer dress"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-xl">
+                <input
+                  type="checkbox"
+                  checked={formData.generateAvatar}
+                  onChange={(e) => setFormData({...formData, generateAvatar: e.target.checked})}
+                  className="w-5 h-5 text-purple-500"
+                />
+                <label className="text-sm font-medium text-gray-700">
+                  Generate AI Avatar (uses DALL-E 3)
+                </label>
+              </div>
             </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Background & Interests</label>
-              <textarea
-                value={formData.bio}
-                onChange={(e) => setFormData({...formData, bio: e.target.value})}
-                rows={4}
-                className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
-                placeholder="Tell me about their interests, background, or any specific traits..."
-              />
-            </div>
-            
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="flex-1 p-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={!formData.name.trim() || isLoading}
-                className="flex-1 p-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 disabled:opacity-50 disabled:transform-none"
-              >
-                {isLoading ? 'Creating...' : 'Create'}
-              </button>
-            </div>
+          </div>
+          
+          <div className="flex gap-3 mt-8">
+            <button
+              onClick={() => setShowCreateModal(false)}
+              className="flex-1 p-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!formData.name.trim() || isLoading}
+              className="flex-1 p-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 disabled:opacity-50 disabled:transform-none flex items-center justify-center gap-2"
+            >
+              {isLoading ? (
+                <>
+                  <Loader className="w-4 h-4 animate-spin" />
+                  {formData.generateAvatar ? 'Creating & Generating Avatar...' : 'Creating...'}
+                </>
+              ) : (
+                'Create Companion'
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -447,20 +592,57 @@ const AICompanionApp = () => {
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                    selectedCharacter?.id === character.id ? 'bg-white/20' : 'bg-gradient-to-r from-purple-500 to-blue-500'
+                  {/* Character Avatar */}
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center overflow-hidden ${
+                    selectedCharacter?.id === character.id ? 'bg-white/20 border-2 border-white/30' : 'bg-gradient-to-r from-purple-500 to-blue-500'
                   }`}>
-                    <Bot className={`w-6 h-6 ${selectedCharacter?.id === character.id ? 'text-white' : 'text-white'}`} />
+                    {character.avatar_url ? (
+                      <img 
+                        src={character.avatar_url} 
+                        alt={character.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <Bot className={`w-6 h-6 ${character.avatar_url ? 'hidden' : 'block'} ${selectedCharacter?.id === character.id ? 'text-white' : 'text-white'}`} />
                   </div>
-                  <div>
+                  
+                  <div className="flex-1">
                     <div className="font-semibold">{character.name}</div>
                     <div className={`text-sm ${selectedCharacter?.id === character.id ? 'text-white/80' : 'text-gray-600'}`}>
                       {typeof character.persona === 'object' ? character.persona.style : character.persona}
                     </div>
                   </div>
+                  
+                  {/* Generate Avatar Button */}
+                  {!character.avatar_url && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        generateCharacterAvatar(character.id);
+                      }}
+                      disabled={isGeneratingImage}
+                      className={`p-2 rounded-lg transition-all ${
+                        selectedCharacter?.id === character.id 
+                          ? 'bg-white/20 hover:bg-white/30 text-white' 
+                          : 'bg-purple-100 hover:bg-purple-200 text-purple-600'
+                      } ${isGeneratingImage ? 'opacity-50' : ''}`}
+                      title="Generate Avatar"
+                    >
+                      {isGeneratingImage ? (
+                        <Loader className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Camera className="w-4 h-4" />
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
+            
             {characters.length === 0 && (
               <div className="text-center py-8 text-gray-500">
                 <Bot className="w-12 h-12 mx-auto mb-2 text-gray-300" />
@@ -482,23 +664,45 @@ const AICompanionApp = () => {
       <div className="flex-1 flex flex-col">
         {selectedCharacter ? (
           <>
-            {/* Chat Header */}
+            {/* Enhanced Chat Header */}
             <div className="p-6 bg-white/80 backdrop-blur-md border-b border-white/20 shadow-sm">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
-                    <Bot className="w-6 h-6 text-white" />
+                  {/* Character Avatar */}
+                  <div className="w-14 h-14 rounded-full overflow-hidden bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center border-2 border-white shadow-lg">
+                    {selectedCharacter.avatar_url ? (
+                      <img 
+                        src={selectedCharacter.avatar_url} 
+                        alt={selectedCharacter.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <Bot className={`w-7 h-7 text-white ${selectedCharacter.avatar_url ? 'hidden' : 'block'}`} />
                   </div>
+                  
                   <div>
                     <h2 className="text-xl font-bold text-gray-800">{selectedCharacter.name}</h2>
-                    <p className="text-gray-600">
-                      {typeof selectedCharacter.persona === 'object' 
-                        ? [selectedCharacter.persona.style, selectedCharacter.persona.bio].filter(Boolean).join(' • ')
-                        : selectedCharacter.persona || 'AI Companion'
-                      }
-                    </p>
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <span className="text-sm">
+                        {typeof selectedCharacter.persona === 'object' 
+                          ? selectedCharacter.persona.style
+                          : selectedCharacter.persona || 'AI Companion'
+                        }
+                      </span>
+                      {selectedCharacter.appearance?.age && (
+                        <>
+                          <span className="w-1 h-1 bg-gray-400 rounded-full"></span>
+                          <span className="text-sm">{selectedCharacter.appearance.age} years old</span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
+                
                 <div className="flex gap-2">
                   <button className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors">
                     <Image className="w-5 h-5" />
@@ -513,17 +717,26 @@ const AICompanionApp = () => {
               </div>
             </div>
 
-            {/* Messages */}
+            {/* Messages with Image Support */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {messages.length === 0 && (
                 <div className="text-center py-12">
-                  <div className="w-20 h-20 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center">
-                    <Bot className="w-10 h-10 text-white" />
+                  <div className="w-20 h-20 rounded-full mx-auto mb-4 overflow-hidden bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center">
+                    {selectedCharacter.avatar_url ? (
+                      <img 
+                        src={selectedCharacter.avatar_url} 
+                        alt={selectedCharacter.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Bot className="w-10 h-10 text-white" />
+                    )}
                   </div>
                   <h3 className="text-xl font-semibold text-gray-800 mb-2">
                     Say hello to {selectedCharacter.name}!
                   </h3>
                   <p className="text-gray-600">Start a conversation with your AI companion</p>
+                  <p className="text-sm text-purple-600 mt-2">💡 Try asking me to create or show you an image!</p>
                 </div>
               )}
 
@@ -533,13 +746,27 @@ const AICompanionApp = () => {
                   className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-xs lg:max-w-md px-6 py-4 rounded-3xl shadow-sm ${
+                    className={`max-w-xs lg:max-w-md rounded-3xl shadow-sm ${
                       message.sender === 'user'
                         ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white'
                         : 'bg-white text-gray-800 shadow-md'
                     }`}
                   >
-                    {message.content}
+                    <div className="px-6 py-4">
+                      {message.content}
+                    </div>
+                    
+                    {/* Display AI-generated images */}
+                    {message.image_url && (
+                      <div className="px-4 pb-4">
+                        <img 
+                          src={message.image_url}
+                          alt="AI generated content"
+                          className="w-full rounded-2xl shadow-lg"
+                          style={{ maxWidth: '250px' }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -553,7 +780,7 @@ const AICompanionApp = () => {
                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
                       </div>
-                      <span className="text-sm text-gray-600">Typing...</span>
+                      <span className="text-sm text-gray-600">Thinking...</span>
                     </div>
                   </div>
                 </div>
@@ -569,7 +796,7 @@ const AICompanionApp = () => {
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                  placeholder="Type your message..."
+                  placeholder="Type your message... (try asking for an image!)"
                   className="flex-1 p-4 border-2 border-gray-200 rounded-2xl focus:border-purple-500 focus:outline-none transition-colors bg-white/80"
                   disabled={isLoading}
                 />
@@ -580,6 +807,12 @@ const AICompanionApp = () => {
                 >
                   <Send className="w-5 h-5" />
                 </button>
+              </div>
+              
+              <div className="mt-2 text-center">
+                <p className="text-xs text-gray-500">
+                  💡 Ask your companion to "show me", "create", or "generate" images!
+                </p>
               </div>
             </div>
           </>
