@@ -875,8 +875,6 @@ const AICompanionApp = () => {
   );
 };
 
-import React, { useState } from 'react';
-import { Edit3, Trash2, Settings, User, Key, Palette, Camera, Loader, Check, X } from 'lucide-react';
 
 // Add these components to your App.jsx file (These are recent changes, delete them if you face error
 
