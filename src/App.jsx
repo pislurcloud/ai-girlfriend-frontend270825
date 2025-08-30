@@ -48,23 +48,26 @@ const AICompanionApp = () => {
     scrollToBottom();
   }, [messages]);
 
+  // Fixed: Only load characters when user is properly set
   useEffect(() => {
     if (user?.id) {
-      loadCharacters();
+      loadCharacters(user);
     }
   }, [user]);
 
   const [authMode, setAuthMode] = useState('login');
   const [authError, setAuthError] = useState('');
 
+  // Fixed: Pass userData directly to loadCharacters to avoid null user issues
   const handleLogin = async (username, password) => {
     try {
       setIsLoading(true);
       setAuthError('');
-      const userData = await apiCall(`/users/login`, 'POST', { username, password }, user);
+      const userData = await apiCall(`/users/login`, 'POST', { username, password });
       setUser(userData);
       setShowLoginModal(false);
-      loadCharacters(userData);
+      // Pass userData directly since state might not be updated yet
+      await loadCharacters(userData);
     } catch (error) {
       setAuthError('Invalid username or password');
     } finally {
@@ -76,24 +79,35 @@ const AICompanionApp = () => {
     try {
       setIsLoading(true);
       setAuthError('');
-      const userData = await apiCall('/users/register', 'POST', { username, password, email }, user);
+      const userData = await apiCall('/users/register', 'POST', { username, password, email });
       setUser(userData);
       setShowLoginModal(false);
-      loadCharacters(userData);
+      // Pass userData directly since state might not be updated yet
+      await loadCharacters(userData);
     } catch (error) {
-      setAuthError(error.response?.data?.detail || 'Registration failed. Username might already exist.');
+      setAuthError(error.message || 'Registration failed. Username might already exist.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const loadCharacters = async () => {
+  // Fixed: Handle user parameter properly and add null checks
+  const loadCharacters = async (userData = null) => {
+    const currentUser = userData || user;
+    if (!currentUser?.id) {
+      console.error('No user ID available for loading characters');
+      setCharacters([]);
+      setSelectedCharacter(null);
+      setMessages([]);
+      return;
+    }
+
     try {
-      const data = await apiCall(`/characters/user/${user.id}`);
+      const data = await apiCall(`/characters/user/${currentUser.id}`, 'GET', null, currentUser);
       setCharacters(data.characters || []);
       if (data.characters && data.characters.length > 0) {
         setSelectedCharacter(data.characters[0]);
-        loadConversation(data.characters[0].id);
+        await loadConversation(data.characters[0].id);
       } else {
         setSelectedCharacter(null);
         setMessages([]);
@@ -111,7 +125,7 @@ const AICompanionApp = () => {
       const data = await apiCall('/memories', 'POST', {
         user_id: user.id,
         character_id: characterId
-      });
+      }, user);
       
       const messageHistory = [];
       if (Array.isArray(data)) {
@@ -144,7 +158,7 @@ const AICompanionApp = () => {
         user_id: user.id,
         character_id: selectedCharacter.id,
         message: userMessage
-      });
+      }, user);
 
       const aiMessage = { 
         sender: 'ai', 
@@ -158,6 +172,7 @@ const AICompanionApp = () => {
 
       setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
+      console.error('Chat error:', error);
       setMessages(prev => [...prev, { 
         sender: 'ai', 
         content: 'Sorry, I\'m having trouble responding right now.' 
@@ -168,6 +183,11 @@ const AICompanionApp = () => {
   };
 
   const createCharacter = async (characterData) => {
+    if (!user?.id) {
+      alert('User not authenticated');
+      return;
+    }
+
     try {
       setIsLoading(true);
       
@@ -184,22 +204,34 @@ const AICompanionApp = () => {
         generate_avatar: characterData.generateAvatar !== false
       };
 
-      await apiCall('/characters/enhanced', 'POST', payload);
+      await apiCall('/characters/enhanced', 'POST', payload, user);
       setShowCreateModal(false);
       await loadCharacters();
     } catch (error) {
+      console.error('Character creation error:', error);
       alert('Failed to create character. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Fixed: Use request body approach for avatar generation
   const generateCharacterAvatar = async (characterId) => {
+    if (!user?.id) {
+      console.error('No user ID available for avatar generation');
+      alert('User not authenticated');
+      return;
+    }
+
     try {
       setIsGeneratingImage(true);
-      await apiCall(`/characters/${characterId}/generate-avatar`, 'POST', { user_id: user.id });
+      // Use request body approach with proper user context
+      await apiCall(`/characters/${characterId}/generate-avatar`, 'POST', {
+        user_id: user.id
+      }, user);
       await loadCharacters();
     } catch (error) {
+      console.error('Avatar generation error:', error);
       alert('Failed to generate avatar. Please try again.');
     } finally {
       setIsGeneratingImage(false);
