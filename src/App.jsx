@@ -624,8 +624,8 @@ const AICompanionApp = () => {
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  {/* Character Avatar */}
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center overflow-hidden ${
+                  {/* Character Avatar - Made Larger */}
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center overflow-hidden ${
                     selectedCharacter?.id === character.id ? 'bg-white/20 border-2 border-white/30' : 'bg-gradient-to-r from-purple-500 to-blue-500'
                   }`}>
                     {character.avatar_url ? (
@@ -700,8 +700,8 @@ const AICompanionApp = () => {
             <div className="p-6 bg-white/80 backdrop-blur-md border-b border-white/20 shadow-sm">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  {/* Character Avatar */}
-                  <div className="w-14 h-14 rounded-full overflow-hidden bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center border-2 border-white shadow-lg">
+                  {/* Character Avatar - Made Much Larger */}
+                  <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center border-3 border-white shadow-xl">
                     {selectedCharacter.avatar_url ? (
                       <img 
                         src={selectedCharacter.avatar_url} 
@@ -713,7 +713,7 @@ const AICompanionApp = () => {
                         }}
                       />
                     ) : null}
-                    <Bot className={`w-7 h-7 text-white ${selectedCharacter.avatar_url ? 'hidden' : 'block'}`} />
+                    <Bot className={`w-10 h-10 text-white ${selectedCharacter.avatar_url ? 'hidden' : 'block'}`} />
                   </div>
                   
                   <div>
@@ -788,14 +788,16 @@ const AICompanionApp = () => {
                       {message.content}
                     </div>
                     
-                    {/* Display AI-generated images */}
+                    {/* Display AI-generated images - Made Even Larger & Clickable */}
                     {message.image_url && (
                       <div className="px-4 pb-4">
                         <img 
                           src={message.image_url}
                           alt="AI generated content"
-                          className="w-full rounded-2xl shadow-lg"
-                          style={{ maxWidth: '250px' }}
+                          className="w-full rounded-2xl shadow-lg cursor-pointer hover:shadow-xl transition-all transform hover:scale-105"
+                          style={{ maxWidth: '500px', minWidth: '300px' }}
+                          onClick={() => window.open(message.image_url, '_blank')}
+                          title="Click to view full size"
                         />
                       </div>
                     )}
