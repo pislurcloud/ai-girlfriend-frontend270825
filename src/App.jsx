@@ -847,8 +847,6 @@ const AICompanionApp = () => {
   );
 };
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Mic, MicOff, Volume2, VolumeX, Play, Pause, Settings, Loader, Waves } from 'lucide-react';
 
 // Voice Recording Hook
 const useVoiceRecording = () => {
