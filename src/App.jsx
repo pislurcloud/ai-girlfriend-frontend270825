@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Plus, User, Bot, Settings, Image, Mic, Camera, Palette, Loader } from 'lucide-react';
+import { Send, Plus, User, Bot, Settings, Image, Mic, Camera, Palette, Loader, Volume2, VolumeX, Play, Pause, MicOff, Edit3, Waves } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
@@ -28,6 +28,68 @@ const apiCall = async (endpoint, method = 'GET', data = null, user = null) => {
   }
 };
 
+// Voice Recording Hook
+const useVoiceRecording = () => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioBlob, setAudioBlob] = useState(null);
+  const mediaRecorderRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      
+      streamRef.current = stream;
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+      
+      const chunks = [];
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      };
+      
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        setAudioBlob(blob);
+      };
+      
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      alert('Could not access microphone. Please check permissions.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      streamRef.current?.getTracks().forEach(track => track.stop());
+      setIsRecording(false);
+    }
+  };
+
+  const clearRecording = () => {
+    setAudioBlob(null);
+  };
+
+  return {
+    isRecording,
+    audioBlob,
+    startRecording,
+    stopRecording,
+    clearRecording
+  };
+};
+
 const AICompanionApp = () => {
   const [user, setUser] = useState(null);
   const [characters, setCharacters] = useState([]);
@@ -38,7 +100,23 @@ const AICompanionApp = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(true);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  
+  // Voice-related state
+  const [inputMode, setInputMode] = useState('text');
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
+  const [availableVoices] = useState([
+    { id: 'alloy', name: 'Alloy', gender: 'Neutral', description: 'Balanced and clear' },
+    { id: 'echo', name: 'Echo', gender: 'Male', description: 'Deep and resonant' },
+    { id: 'fable', name: 'Fable', gender: 'Female', description: 'Warm and expressive' },
+    { id: 'onyx', name: 'Onyx', gender: 'Male', description: 'Strong and confident' },
+    { id: 'nova', name: 'Nova', gender: 'Female', description: 'Bright and energetic' },
+    { id: 'shimmer', name: 'Shimmer', gender: 'Female', description: 'Soft and gentle' }
+  ]);
+  
   const messagesEndRef = useRef(null);
+  const audioRef = useRef(null);
+  const { isRecording, audioBlob, startRecording, stopRecording, clearRecording } = useVoiceRecording();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -125,10 +203,22 @@ const AICompanionApp = () => {
       const messageHistory = [];
       if (Array.isArray(data)) {
         data.forEach((row) => {
-          if (row.message) messageHistory.push({ sender: 'user', content: row.message });
+          if (row.message) {
+            messageHistory.push({ 
+              sender: 'user', 
+              content: row.message,
+              interaction_type: row.interaction_type || 'text'
+            });
+          }
           if (row.response) {
-            const aiMessage = { sender: 'ai', content: row.response };
+            const aiMessage = { 
+              sender: 'ai', 
+              content: row.response,
+              interaction_type: row.interaction_type || 'text'
+            };
             if (row.image_url) aiMessage.image_url = row.image_url;
+            if (row.audio_data) aiMessage.audio_data = row.audio_data;
+            if (row.voice_used) aiMessage.voice_used = row.voice_used;
             messageHistory.push(aiMessage);
           }
         });
@@ -145,7 +235,7 @@ const AICompanionApp = () => {
 
     const userMessage = inputMessage.trim();
     setInputMessage('');
-    setMessages((prev) => [...prev, { sender: 'user', content: userMessage }]);
+    setMessages((prev) => [...prev, { sender: 'user', content: userMessage, interaction_type: 'text' }]);
     setIsLoading(true);
 
     try {
@@ -163,10 +253,22 @@ const AICompanionApp = () => {
       const aiMessage = {
         sender: 'ai',
         content: response.reply || "Sorry, I didn't understand that.",
+        interaction_type: 'text'
       };
 
       if (response.image_url) {
         aiMessage.image_url = response.image_url;
+      }
+
+      if (response.audio_data) {
+        aiMessage.audio_data = response.audio_data;
+        aiMessage.voice_used = response.voice_used;
+        
+        // Auto-play if enabled
+        const voiceConfig = selectedCharacter.persona?.voice_config;
+        if (voiceConfig?.auto_play !== false) {
+          setTimeout(() => playAudio(response.audio_data), 500);
+        }
       }
 
       setMessages((prev) => [...prev, aiMessage]);
@@ -174,8 +276,148 @@ const AICompanionApp = () => {
       console.error('Chat error:', error);
       setMessages((prev) => [
         ...prev,
-        { sender: 'ai', content: "Sorry, I'm having trouble responding right now." },
+        { sender: 'ai', content: "Sorry, I'm having trouble responding right now.", interaction_type: 'text' },
       ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const sendVoiceMessage = async (voiceData) => {
+    if (!selectedCharacter || !user) return;
+
+    setIsLoading(true);
+    
+    // Add user voice message to chat
+    setMessages((prev) => [...prev, { 
+      sender: 'user', 
+      content: 'Voice message...', 
+      interaction_type: 'voice' 
+    }]);
+
+    try {
+      const response = await apiCall(
+        '/voice/chat',
+        'POST',
+        voiceData,
+        user,
+      );
+
+      const aiMessage = {
+        sender: 'ai',
+        content: response.transcript || response.reply || "Sorry, I didn't understand that.",
+        interaction_type: 'voice'
+      };
+
+      if (response.image_url) {
+        aiMessage.image_url = response.image_url;
+      }
+
+      if (response.audio_data) {
+        aiMessage.audio_data = response.audio_data;
+        aiMessage.voice_used = response.voice_used;
+        
+        // Auto-play voice response
+        const voiceConfig = selectedCharacter.persona?.voice_config;
+        if (voiceConfig?.auto_play !== false) {
+          setTimeout(() => playAudio(response.audio_data), 500);
+        }
+      }
+
+      // Update the user message with the actual transcript
+      if (response.user_transcript) {
+        setMessages((prev) => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
+            content: response.user_transcript
+          };
+          return [...updated, aiMessage];
+        });
+      } else {
+        setMessages((prev) => [...prev, aiMessage]);
+      }
+
+    } catch (error) {
+      console.error('Voice chat error:', error);
+      setMessages((prev) => [
+        ...prev,
+        { sender: 'ai', content: "Sorry, I'm having trouble with voice processing right now.", interaction_type: 'text' },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const playAudio = (audioData) => {
+    try {
+      const audioBlob = new Blob([
+        Uint8Array.from(atob(audioData), c => c.charCodeAt(0))
+      ], { type: 'audio/mp3' });
+      
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      
+      const voiceConfig = selectedCharacter?.persona?.voice_config;
+      audio.volume = voiceConfig?.volume || 0.8;
+      audio.playbackRate = voiceConfig?.speed || 1.0;
+      
+      audio.onplay = () => setIsPlayingAudio(true);
+      audio.onended = () => setIsPlayingAudio(false);
+      audio.onerror = () => {
+        setIsPlayingAudio(false);
+        console.error('Audio playback error');
+      };
+      
+      audioRef.current = audio;
+      audio.play();
+    } catch (error) {
+      console.error('Audio playback error:', error);
+      alert('Could not play audio response');
+    }
+  };
+
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      setIsPlayingAudio(false);
+    }
+  };
+
+  const handleVoiceSubmit = async () => {
+    if (!audioBlob || !selectedCharacter || !user) return;
+
+    try {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64Audio = reader.result.split(',')[1];
+        
+        await sendVoiceMessage({
+          user_id: user.id,
+          character_id: selectedCharacter.id,
+          audio_data: base64Audio,
+          format: 'webm'
+        });
+        
+        clearRecording();
+      };
+      reader.readAsDataURL(audioBlob);
+    } catch (error) {
+      console.error('Voice submission error:', error);
+      alert('Failed to process voice message');
+    }
+  };
+
+  const updateVoiceSettings = async (voiceData) => {
+    try {
+      setIsLoading(true);
+      await apiCall(`/characters/${voiceData.character_id}/voice-config`, 'PUT', voiceData, user);
+      await loadCharacters(); // Reload to get updated voice config
+      setShowVoiceSettings(false);
+    } catch (error) {
+      console.error('Voice settings update error:', error);
+      alert('Failed to update voice settings');
     } finally {
       setIsLoading(false);
     }
@@ -197,6 +439,12 @@ const AICompanionApp = () => {
           name: characterData.name,
           style: characterData.style,
           bio: characterData.bio,
+          voice_config: {
+            voice: 'alloy',
+            speed: 1.0,
+            volume: 0.8,
+            auto_play: true
+          }
         },
         appearance: characterData.appearance || {},
         generate_avatar: characterData.generateAvatar !== false,
@@ -213,7 +461,6 @@ const AICompanionApp = () => {
     }
   };
 
-  // ✅ Wrapped as a proper function (fixes your original build error)
   const generateCharacterAvatar = async (characterId) => {
     if (!user?.id) {
       console.error('No user ID available for avatar generation');
@@ -251,9 +498,289 @@ const AICompanionApp = () => {
     loadConversation(character.id);
   };
 
-  // ----------------------
+  // Enhanced Message Component with Voice Support
+  const VoiceMessage = ({ message, index }) => {
+    return (
+      <div key={index} className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+        <div
+          className={`max-w-xs lg:max-w-md rounded-3xl shadow-sm ${
+            message.sender === 'user'
+              ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white'
+              : 'bg-white text-gray-800 shadow-md'
+          }`}
+        >
+          {/* Text Content */}
+          <div className="px-6 py-4">{message.content}</div>
+          
+          {/* Voice Controls for AI Messages */}
+          {message.sender === 'ai' && message.audio_data && (
+            <div className="px-4 pb-4">
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                <button
+                  onClick={() => playAudio(message.audio_data)}
+                  disabled={isPlayingAudio}
+                  className={`p-2 rounded-lg transition-all ${
+                    isPlayingAudio 
+                      ? 'bg-blue-500 text-white' 
+                      : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                  }`}
+                >
+                  {isPlayingAudio ? (
+                    <Pause className="w-4 h-4" />
+                  ) : (
+                    <Play className="w-4 h-4" />
+                  )}
+                </button>
+                
+                <div className="flex-1">
+                  <div className="text-xs text-gray-600">
+                    Voice Response • {message.voice_used || 'AI Voice'}
+                  </div>
+                  {isPlayingAudio && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <div className="w-1 h-3 bg-blue-400 rounded animate-pulse"></div>
+                      <div className="w-1 h-2 bg-blue-400 rounded animate-pulse" style={{animationDelay: '0.1s'}}></div>
+                      <div className="w-1 h-4 bg-blue-400 rounded animate-pulse" style={{animationDelay: '0.2s'}}></div>
+                      <div className="w-1 h-2 bg-blue-400 rounded animate-pulse" style={{animationDelay: '0.3s'}}></div>
+                      <div className="w-1 h-3 bg-blue-400 rounded animate-pulse" style={{animationDelay: '0.4s'}}></div>
+                    </div>
+                  )}
+                </div>
+
+                {isPlayingAudio && (
+                  <button
+                    onClick={stopAudio}
+                    className="p-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                  >
+                    <Pause className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* Voice Input Indicator for User Messages */}
+          {message.sender === 'user' && message.interaction_type === 'voice' && (
+            <div className="px-4 pb-4">
+              <div className="flex items-center gap-2 text-white/70 text-xs">
+                <Mic className="w-3 h-3" />
+                <span>Voice message</span>
+              </div>
+            </div>
+          )}
+
+          {/* Image Display */}
+          {message.image_url && (
+            <div className="px-4 pb-4">
+              <img
+                src={message.image_url}
+                alt="AI generated content"
+                className="w-full rounded-2xl shadow-lg cursor-pointer hover:shadow-xl transition-all transform hover:scale-105"
+                style={{ maxWidth: '500px', minWidth: '300px' }}
+                onClick={() => window.open(message.image_url, '_blank')}
+                title="Click to view full size"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Voice Settings Modal
+  const VoiceSettingsModal = () => {
+    const [voiceConfig, setVoiceConfig] = useState({
+      voice: selectedCharacter?.persona?.voice_config?.voice || 'alloy',
+      speed: selectedCharacter?.persona?.voice_config?.speed || 1.0,
+      volume: selectedCharacter?.persona?.voice_config?.volume || 0.8,
+      auto_play: selectedCharacter?.persona?.voice_config?.auto_play !== false
+    });
+    const [testingVoice, setTestingVoice] = useState(false);
+
+    const testVoice = async (voiceId) => {
+      setTestingVoice(true);
+      try {
+        const response = await fetch(`${API_BASE}/voice/test-tts?text=Hello! This is how I sound.&voice=${voiceId}`, {
+          method: 'POST'
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          const audioBlob = new Blob([
+            Uint8Array.from(atob(data.audio_data), c => c.charCodeAt(0))
+          ], { type: 'audio/mp3' });
+          
+          const audioUrl = URL.createObjectURL(audioBlob);
+          const audio = new Audio(audioUrl);
+          audio.volume = voiceConfig.volume;
+          audio.playbackRate = voiceConfig.speed;
+          audio.play();
+        }
+      } catch (error) {
+        console.error('Voice test error:', error);
+      } finally {
+        setTestingVoice(false);
+      }
+    };
+
+    const handleSave = () => {
+      updateVoiceSettings({
+        character_id: selectedCharacter.id,
+        user_id: user.id,
+        voice_config: voiceConfig
+      });
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+                <Volume2 className="w-6 h-6 text-white" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-800">Voice Settings</h2>
+            </div>
+            <button
+              onClick={() => setShowVoiceSettings(false)}
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            {/* Voice Selection */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-3">Voice Character</label>
+              <div className="grid grid-cols-2 gap-3">
+                {availableVoices.map((voice) => (
+                  <div
+                    key={voice.id}
+                    className={`p-3 border-2 rounded-xl cursor-pointer transition-all ${
+                      voiceConfig.voice === voice.id
+                        ? 'border-purple-500 bg-purple-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    onClick={() => setVoiceConfig(prev => ({...prev, voice: voice.id}))}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-sm">{voice.name}</div>
+                        <div className="text-xs text-gray-500">{voice.gender}</div>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          testVoice(voice.id);
+                        }}
+                        disabled={testingVoice}
+                        className="p-1 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition-colors disabled:opacity-50"
+                        title="Test Voice"
+                      >
+                        {testingVoice ? (
+                          <Loader className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Play className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">{voice.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Speed Control */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Speech Speed: {voiceConfig.speed}x
+              </label>
+              <input
+                type="range"
+                min="0.5"
+                max="2.0"
+                step="0.1"
+                value={voiceConfig.speed}
+                onChange={(e) => setVoiceConfig(prev => ({...prev, speed: parseFloat(e.target.value)}))}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>Slow</span>
+                <span>Normal</span>
+                <span>Fast</span>
+              </div>
+            </div>
+
+            {/* Volume Control */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Volume: {Math.round(voiceConfig.volume * 100)}%
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.1"
+                value={voiceConfig.volume}
+                onChange={(e) => setVoiceConfig(prev => ({...prev, volume: parseFloat(e.target.value)}))}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              />
+            </div>
+
+            {/* Auto-play Setting */}
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+              <div>
+                <div className="font-medium text-gray-800">Auto-play Responses</div>
+                <div className="text-sm text-gray-600">Automatically play AI voice responses</div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={voiceConfig.auto_play}
+                  onChange={(e) => setVoiceConfig(prev => ({...prev, auto_play: e.target.checked}))}
+                  className="sr-only"
+                />
+                <div className={`w-11 h-6 rounded-full transition-colors ${
+                  voiceConfig.auto_play ? 'bg-purple-500' : 'bg-gray-300'
+                }`}>
+                  <div className={`w-5 h-5 bg-white rounded-full transition-transform transform ${
+                    voiceConfig.auto_play ? 'translate-x-5' : 'translate-x-0.5'
+                  } mt-0.5`}></div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex gap-3 mt-8">
+            <button
+              onClick={() => setShowVoiceSettings(false)}
+              className="flex-1 p-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isLoading}
+              className="flex-1 p-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isLoading ? (
+                <>
+                  <Loader className="w-4 h-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Settings'
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Login Modal
-  // ----------------------
   const LoginModal = () => {
     const [formData, setFormData] = useState({ username: '', password: '', email: '' });
 
@@ -346,9 +873,7 @@ const AICompanionApp = () => {
     );
   };
 
-  // ----------------------
   // Create Character Modal
-  // ----------------------
   const CreateCharacterModal = () => {
     const [formData, setFormData] = useState({
       name: '',
@@ -562,7 +1087,6 @@ const AICompanionApp = () => {
     );
   };
 
-  // IMPORTANT: Render the login modal AFTER it's defined (to avoid "cannot access before initialization")
   if (showLoginModal) {
     return <LoginModal />;
   }
@@ -722,11 +1246,15 @@ const AICompanionApp = () => {
                 </div>
 
                 <div className="flex gap-2">
-                  <button className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors">
-                    <Image className="w-5 h-5" />
+                  <button 
+                    onClick={() => setShowVoiceSettings(true)}
+                    className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors"
+                    title="Voice Settings"
+                  >
+                    <Volume2 className="w-5 h-5" />
                   </button>
                   <button className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors">
-                    <Mic className="w-5 h-5" />
+                    <Image className="w-5 h-5" />
                   </button>
                   <button className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors">
                     <Settings className="w-5 h-5" />
@@ -748,35 +1276,12 @@ const AICompanionApp = () => {
                   </div>
                   <h3 className="text-xl font-semibold text-gray-800 mb-2">Say hello to {selectedCharacter.name}!</h3>
                   <p className="text-gray-600">Start a conversation with your AI companion</p>
-                  <p className="text-sm text-purple-600 mt-2">💡 Try asking me to create or show you an image!</p>
+                  <p className="text-sm text-purple-600 mt-2">Try text or voice messages, or ask for images!</p>
                 </div>
               )}
 
               {messages.map((message, index) => (
-                <div key={index} className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className={`max-w-xs lg:max-w-md rounded-3xl shadow-sm ${
-                      message.sender === 'user'
-                        ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white'
-                        : 'bg-white text-gray-800 shadow-md'
-                    }`}
-                  >
-                    <div className="px-6 py-4">{message.content}</div>
-
-                    {message.image_url && (
-                      <div className="px-4 pb-4">
-                        <img
-                          src={message.image_url}
-                          alt="AI generated content"
-                          className="w-full rounded-2xl shadow-lg cursor-pointer hover:shadow-xl transition-all transform hover:scale-105"
-                          style={{ maxWidth: '500px', minWidth: '300px' }}
-                          onClick={() => window.open(message.image_url, '_blank')}
-                          title="Click to view full size"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <VoiceMessage key={index} message={message} index={index} />
               ))}
 
               {isLoading && (
@@ -796,29 +1301,117 @@ const AICompanionApp = () => {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
+            {/* Enhanced Input with Voice Support */}
             <div className="p-6 bg-white/80 backdrop-blur-md border-t border-white/20">
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                  placeholder="Type your message... (try asking for an image!)"
-                  className="flex-1 p-4 border-2 border-gray-200 rounded-2xl focus:border-purple-500 focus:outline-none transition-colors bg-white/80"
-                  disabled={isLoading}
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={!inputMessage.trim() || isLoading}
-                  className="p-4 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-2xl hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 disabled:opacity-50 disabled:transform-none"
-                >
-                  <Send className="w-5 h-5" />
-                </button>
+              {/* Mode Toggle */}
+              <div className="flex justify-center mb-4">
+                <div className="flex bg-gray-100 rounded-xl p-1">
+                  <button
+                    onClick={() => setInputMode('text')}
+                    className={`px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${
+                      inputMode === 'text' 
+                        ? 'bg-white shadow-sm text-purple-600 font-medium' 
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    <Edit3 className="w-4 h-4" />
+                    Text
+                  </button>
+                  <button
+                    onClick={() => setInputMode('voice')}
+                    className={`px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${
+                      inputMode === 'voice' 
+                        ? 'bg-white shadow-sm text-purple-600 font-medium' 
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    <Mic className="w-4 h-4" />
+                    Voice
+                  </button>
+                </div>
               </div>
 
+              {inputMode === 'text' ? (
+                /* Text Input */
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+                    placeholder="Type your message... (try asking for an image!)"
+                    className="flex-1 p-4 border-2 border-gray-200 rounded-2xl focus:border-purple-500 focus:outline-none transition-colors bg-white/80"
+                    disabled={isLoading}
+                  />
+                  <button
+                    onClick={sendMessage}
+                    disabled={!inputMessage.trim() || isLoading}
+                    className="p-4 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-2xl hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 disabled:opacity-50 disabled:transform-none"
+                  >
+                    <Send className="w-5 h-5" />
+                  </button>
+                </div>
+              ) : (
+                /* Voice Input */
+                <div className="text-center">
+                  <div className="flex justify-center mb-4">
+                    <div className="relative">
+                      <button
+                        onClick={isRecording ? stopRecording : startRecording}
+                        disabled={isLoading}
+                        className={`w-16 h-16 rounded-full flex items-center justify-center transition-all transform hover:scale-105 ${
+                          isRecording
+                            ? 'bg-red-500 hover:bg-red-600 shadow-lg animate-pulse'
+                            : 'bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 shadow-lg'
+                        }`}
+                      >
+                        {isLoading ? (
+                          <Loader className="w-6 h-6 text-white animate-spin" />
+                        ) : isRecording ? (
+                          <MicOff className="w-6 h-6 text-white" />
+                        ) : (
+                          <Mic className="w-6 h-6 text-white" />
+                        )}
+                      </button>
+                      
+                      {isRecording && (
+                        <div className="absolute -inset-2 border-4 border-red-400 rounded-full animate-ping opacity-50"></div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {audioBlob && (
+                    <div className="flex justify-center gap-3 mb-4">
+                      <button
+                        onClick={clearRecording}
+                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-colors"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        onClick={handleVoiceSubmit}
+                        className="px-6 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all"
+                      >
+                        Send Voice Message
+                      </button>
+                    </div>
+                  )}
+                  
+                  <p className="text-sm text-gray-600">
+                    {isRecording 
+                      ? 'Recording... Click to stop' 
+                      : isLoading
+                        ? 'Processing your voice message...'
+                        : audioBlob 
+                          ? 'Voice message ready to send'
+                          : 'Click to record voice message'
+                    }
+                  </p>
+                </div>
+              )}
+
               <div className="mt-2 text-center">
-                <p className="text-xs text-gray-500">💡 Ask your companion to "show me", "create", or "generate" images!</p>
+                <p className="text-xs text-gray-500">Try voice messages or ask for images!</p>
               </div>
             </div>
           </>
@@ -838,666 +1431,3 @@ const AICompanionApp = () => {
               </button>
             </div>
           </div>
-        )}
-      </div>
-
-      {/* Modals */}
-      {showCreateModal && <CreateCharacterModal />}
-    </div>
-  );
-};
-
-
-// Voice Recording Hook
-const useVoiceRecording = () => {
-  const [isRecording, setIsRecording] = useState(false);
-  const [audioBlob, setAudioBlob] = useState(null);
-  const mediaRecorderRef = useRef(null);
-  const streamRef = useRef(null);
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-      
-      streamRef.current = stream;
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
-      });
-      
-      const chunks = [];
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunks.push(event.data);
-      };
-      
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        setAudioBlob(blob);
-      };
-      
-      mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.start();
-      setIsRecording(true);
-    } catch (error) {
-      console.error('Error starting recording:', error);
-      alert('Could not access microphone. Please check permissions.');
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      streamRef.current?.getTracks().forEach(track => track.stop());
-      setIsRecording(false);
-    }
-  };
-
-  const clearRecording = () => {
-    setAudioBlob(null);
-  };
-
-  return {
-    isRecording,
-    audioBlob,
-    startRecording,
-    stopRecording,
-    clearRecording
-  };
-};
-
-// Voice Chat Component
-const VoiceChatInterface = ({ user, selectedCharacter, onVoiceMessage, isProcessing }) => {
-  const { isRecording, audioBlob, startRecording, stopRecording, clearRecording } = useVoiceRecording();
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [audioSettings, setAudioSettings] = useState({
-    autoPlay: true,
-    speed: 1.0,
-    volume: 0.8
-  });
-  const audioRef = useRef(null);
-
-  const handleVoiceSubmit = async () => {
-    if (!audioBlob || !selectedCharacter || !user) return;
-
-    try {
-      // Convert blob to base64
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Audio = reader.result.split(',')[1]; // Remove data:audio/webm;base64, prefix
-        
-        await onVoiceMessage({
-          user_id: user.id,
-          character_id: selectedCharacter.id,
-          audio_data: base64Audio,
-          format: 'webm'
-        });
-        
-        clearRecording();
-      };
-      reader.readAsDataURL(audioBlob);
-    } catch (error) {
-      console.error('Voice submission error:', error);
-      alert('Failed to process voice message');
-    }
-  };
-
-  const playAudio = (audioData) => {
-    try {
-      const audioBlob = new Blob([
-        Uint8Array.from(atob(audioData), c => c.charCodeAt(0))
-      ], { type: 'audio/mp3' });
-      
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      audio.volume = audioSettings.volume;
-      audio.playbackRate = audioSettings.speed;
-      
-      audio.onplay = () => setIsPlayingAudio(true);
-      audio.onended = () => setIsPlayingAudio(false);
-      audio.onerror = () => {
-        setIsPlayingAudio(false);
-        console.error('Audio playback error');
-      };
-      
-      audioRef.current = audio;
-      audio.play();
-    } catch (error) {
-      console.error('Audio playback error:', error);
-      alert('Could not play audio response');
-    }
-  };
-
-  const stopAudio = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      setIsPlayingAudio(false);
-    }
-  };
-
-  return (
-    <div className="bg-white/90 backdrop-blur-md rounded-2xl p-6 shadow-lg border border-white/20">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-          <Waves className="w-5 h-5 text-purple-500" />
-          Voice Chat
-        </h3>
-        
-        {/* Audio Settings */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1">
-            <Volume2 className="w-4 h-4 text-gray-500" />
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={audioSettings.volume}
-              onChange={(e) => setAudioSettings(prev => ({...prev, volume: parseFloat(e.target.value)}))}
-              className="w-16 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-            />
-          </div>
-          
-          <button
-            onClick={() => setAudioSettings(prev => ({...prev, autoPlay: !prev.autoPlay}))}
-            className={`p-2 rounded-lg transition-all ${
-              audioSettings.autoPlay 
-                ? 'bg-purple-100 text-purple-600' 
-                : 'bg-gray-100 text-gray-500'
-            }`}
-            title={`Auto-play: ${audioSettings.autoPlay ? 'On' : 'Off'}`}
-          >
-            {audioSettings.autoPlay ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-          </button>
-        </div>
-      </div>
-      
-      {/* Recording Interface */}
-      <div className="flex items-center justify-center mb-4">
-        <div className="relative">
-          <button
-            onClick={isRecording ? stopRecording : startRecording}
-            disabled={isProcessing}
-            className={`w-20 h-20 rounded-full flex items-center justify-center transition-all transform hover:scale-105 disabled:opacity-50 ${
-              isRecording
-                ? 'bg-red-500 hover:bg-red-600 shadow-lg animate-pulse'
-                : 'bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 shadow-lg'
-            }`}
-          >
-            {isProcessing ? (
-              <Loader className="w-8 h-8 text-white animate-spin" />
-            ) : isRecording ? (
-              <MicOff className="w-8 h-8 text-white" />
-            ) : (
-              <Mic className="w-8 h-8 text-white" />
-            )}
-          </button>
-          
-          {isRecording && (
-            <div className="absolute -inset-2 border-4 border-red-400 rounded-full animate-ping opacity-50"></div>
-          )}
-        </div>
-      </div>
-      
-      <div className="text-center mb-4">
-        <p className="text-sm text-gray-600">
-          {isRecording 
-            ? 'Recording... Click to stop and send' 
-            : isProcessing 
-              ? 'Processing your voice message...'
-              : audioBlob 
-                ? 'Ready to send voice message'
-                : 'Hold to record voice message'
-          }
-        </p>
-      </div>
-      
-      {/* Audio Preview & Controls */}
-      {audioBlob && !isProcessing && (
-        <div className="flex items-center justify-center gap-3 mb-4">
-          <button
-            onClick={clearRecording}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-colors"
-          >
-            Clear
-          </button>
-          <button
-            onClick={handleVoiceSubmit}
-            className="px-6 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all flex items-center gap-2"
-          >
-            <Mic className="w-4 h-4" />
-            Send Voice Message
-          </button>
-        </div>
-      )}
-      
-      {/* Audio Playback Controls */}
-      {isPlayingAudio && (
-        <div className="flex items-center justify-center gap-3 p-3 bg-blue-50 rounded-xl">
-          <Waves className="w-5 h-5 text-blue-500 animate-pulse" />
-          <span className="text-sm text-blue-700 font-medium">Playing AI response...</span>
-          <button
-            onClick={stopAudio}
-            className="p-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-          >
-            <Pause className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Voice Settings Modal
-const VoiceSettingsModal = ({ character, onClose, onUpdate, availableVoices, isLoading }) => {
-  const [voiceConfig, setVoiceConfig] = useState({
-    voice: character.persona?.voice_config?.voice || 'alloy',
-    speed: character.persona?.voice_config?.speed || 1.0,
-    pitch: character.persona?.voice_config?.pitch || 1.0,
-    auto_play: character.persona?.voice_config?.auto_play !== false
-  });
-  const [testingVoice, setTestingVoice] = useState(false);
-
-  const testVoice = async (voiceId) => {
-    setTestingVoice(true);
-    try {
-      const response = await fetch(`${API_BASE}/voice/test-tts?text=Hello! This is how I sound.&voice=${voiceId}`, {
-        method: 'POST'
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Play test audio
-        const audioBlob = new Blob([
-          Uint8Array.from(atob(data.audio_data), c => c.charCodeAt(0))
-        ], { type: 'audio/mp3' });
-        
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        audio.play();
-      }
-    } catch (error) {
-      console.error('Voice test error:', error);
-    } finally {
-      setTestingVoice(false);
-    }
-  };
-
-  const handleSave = () => {
-    onUpdate({
-      character_id: character.id,
-      user_id: character.user_id,
-      voice_config: voiceConfig
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
-              <Volume2 className="w-6 h-6 text-white" />
-            </div>
-            <h2 className="text-xl font-bold text-gray-800">Voice Settings</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="space-y-6">
-          {/* Voice Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">Voice Character</label>
-            <div className="grid grid-cols-2 gap-3">
-              {availableVoices.map((voice) => (
-                <div
-                  key={voice.id}
-                  className={`p-3 border-2 rounded-xl cursor-pointer transition-all ${
-                    voiceConfig.voice === voice.id
-                      ? 'border-purple-500 bg-purple-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                  onClick={() => setVoiceConfig(prev => ({...prev, voice: voice.id}))}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-sm">{voice.name}</div>
-                      <div className="text-xs text-gray-500">{voice.gender}</div>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        testVoice(voice.id);
-                      }}
-                      disabled={testingVoice}
-                      className="p-1 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition-colors disabled:opacity-50"
-                      title="Test Voice"
-                    >
-                      {testingVoice ? (
-                        <Loader className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Play className="w-4 h-4" />
-                      )}
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-600 mt-1">{voice.description}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Speed Control */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Speech Speed: {voiceConfig.speed}x
-            </label>
-            <input
-              type="range"
-              min="0.5"
-              max="2.0"
-              step="0.1"
-              value={voiceConfig.speed}
-              onChange={(e) => setVoiceConfig(prev => ({...prev, speed: parseFloat(e.target.value)}))}
-              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-            />
-            <div className="flex justify-between text-xs text-gray-500 mt-1">
-              <span>Slow</span>
-              <span>Normal</span>
-              <span>Fast</span>
-            </div>
-          </div>
-
-          {/* Auto-play Setting */}
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-            <div>
-              <div className="font-medium text-gray-800">Auto-play Responses</div>
-              <div className="text-sm text-gray-600">Automatically play AI voice responses</div>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={voiceConfig.auto_play}
-                onChange={(e) => setVoiceConfig(prev => ({...prev, auto_play: e.target.checked}))}
-                className="sr-only"
-              />
-              <div className={`w-11 h-6 rounded-full transition-colors ${
-                voiceConfig.auto_play ? 'bg-purple-500' : 'bg-gray-300'
-              }`}>
-                <div className={`w-5 h-5 bg-white rounded-full transition-transform transform ${
-                  voiceConfig.auto_play ? 'translate-x-5' : 'translate-x-0.5'
-                } mt-0.5`}></div>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        <div className="flex gap-3 mt-8">
-          <button
-            onClick={onClose}
-            className="flex-1 p-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isLoading}
-            className="flex-1 p-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {isLoading ? (
-              <>
-                <Loader className="w-4 h-4 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              'Save Settings'
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Enhanced Message Component with Voice Playback
-const VoiceMessage = ({ message, character, onPlayAudio, isPlaying }) => {
-  const [showTranscript, setShowTranscript] = useState(false);
-
-  return (
-    <div className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-xs lg:max-w-md rounded-3xl shadow-sm ${
-          message.sender === 'user'
-            ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white'
-            : 'bg-white text-gray-800 shadow-md'
-        }`}
-      >
-        {/* Text Content */}
-        <div className="px-6 py-4">
-          {message.content}
-        </div>
-        
-        {/* Voice Controls for AI Messages */}
-        {message.sender === 'ai' && message.audio_data && (
-          <div className="px-4 pb-4">
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-              <button
-                onClick={() => onPlayAudio(message.audio_data)}
-                disabled={isPlaying}
-                className={`p-2 rounded-lg transition-all ${
-                  isPlaying 
-                    ? 'bg-blue-500 text-white' 
-                    : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
-                }`}
-              >
-                {isPlaying ? (
-                  <Pause className="w-4 h-4" />
-                ) : (
-                  <Play className="w-4 h-4" />
-                )}
-              </button>
-              
-              <div className="flex-1">
-                <div className="text-xs text-gray-600">
-                  Voice Response • {message.voice_used || 'AI Voice'}
-                </div>
-                {isPlaying && (
-                  <div className="flex items-center gap-1 mt-1">
-                    <div className="w-1 h-3 bg-blue-400 rounded animate-pulse"></div>
-                    <div className="w-1 h-2 bg-blue-400 rounded animate-pulse" style={{animationDelay: '0.1s'}}></div>
-                    <div className="w-1 h-4 bg-blue-400 rounded animate-pulse" style={{animationDelay: '0.2s'}}></div>
-                    <div className="w-1 h-2 bg-blue-400 rounded animate-pulse" style={{animationDelay: '0.3s'}}></div>
-                    <div className="w-1 h-3 bg-blue-400 rounded animate-pulse" style={{animationDelay: '0.4s'}}></div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-        
-        {/* Voice Input Indicator for User Messages */}
-        {message.sender === 'user' && message.interaction_type === 'voice' && (
-          <div className="px-4 pb-4">
-            <div className="flex items-center gap-2 text-white/70 text-xs">
-              <Mic className="w-3 h-3" />
-              <span>Voice message</span>
-            </div>
-          </div>
-        )}
-
-        {/* Image Display */}
-        {message.image_url && (
-          <div className="px-4 pb-4">
-            <img 
-              src={message.image_url}
-              alt="AI generated content"
-              className="w-full rounded-2xl shadow-lg cursor-pointer hover:shadow-xl transition-all transform hover:scale-105"
-              style={{ maxWidth: '500px', minWidth: '300px' }}
-              onClick={() => window.open(message.image_url, '_blank')}
-              title="Click to view full size"
-            />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// Voice Input Component (Alternative to Text Input)
-const VoiceInputBox = ({ onVoiceMessage, isProcessing, user, selectedCharacter }) => {
-  const { isRecording, audioBlob, startRecording, stopRecording, clearRecording } = useVoiceRecording();
-  const [inputMode, setInputMode] = useState('text'); // 'text' or 'voice'
-  const [textMessage, setTextMessage] = useState('');
-
-  const handleVoiceSubmit = async () => {
-    if (!audioBlob) return;
-
-    try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Audio = reader.result.split(',')[1];
-        
-        await onVoiceMessage({
-          user_id: user.id,
-          character_id: selectedCharacter.id,
-          audio_data: base64Audio,
-          format: 'webm'
-        });
-        
-        clearRecording();
-      };
-      reader.readAsDataURL(audioBlob);
-    } catch (error) {
-      console.error('Voice submission error:', error);
-    }
-  };
-
-  const handleTextSubmit = () => {
-    if (!textMessage.trim()) return;
-    onVoiceMessage({ message: textMessage.trim(), type: 'text' });
-    setTextMessage('');
-  };
-
-  return (
-    <div className="p-6 bg-white/80 backdrop-blur-md border-t border-white/20">
-      {/* Mode Toggle */}
-      <div className="flex justify-center mb-4">
-        <div className="flex bg-gray-100 rounded-xl p-1">
-          <button
-            onClick={() => setInputMode('text')}
-            className={`px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${
-              inputMode === 'text' 
-                ? 'bg-white shadow-sm text-purple-600 font-medium' 
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            <Edit3 className="w-4 h-4" />
-            Text
-          </button>
-          <button
-            onClick={() => setInputMode('voice')}
-            className={`px-4 py-2 rounded-lg transition-all flex items-center gap-2 ${
-              inputMode === 'voice' 
-                ? 'bg-white shadow-sm text-purple-600 font-medium' 
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            <Mic className="w-4 h-4" />
-            Voice
-          </button>
-        </div>
-      </div>
-
-      {inputMode === 'text' ? (
-        /* Text Input */
-        <div className="flex gap-3">
-          <input
-            type="text"
-            value={textMessage}
-            onChange={(e) => setTextMessage(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleTextSubmit()}
-            placeholder="Type your message..."
-            className="flex-1 p-4 border-2 border-gray-200 rounded-2xl focus:border-purple-500 focus:outline-none transition-colors bg-white/80"
-            disabled={isProcessing}
-          />
-          <button
-            onClick={handleTextSubmit}
-            disabled={!textMessage.trim() || isProcessing}
-            className="p-4 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-2xl hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 disabled:opacity-50"
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        </div>
-      ) : (
-        /* Voice Input */
-        <div className="text-center">
-          <div className="flex justify-center mb-4">
-            <div className="relative">
-              <button
-                onClick={isRecording ? stopRecording : startRecording}
-                disabled={isProcessing}
-                className={`w-16 h-16 rounded-full flex items-center justify-center transition-all transform hover:scale-105 ${
-                  isRecording
-                    ? 'bg-red-500 hover:bg-red-600 shadow-lg animate-pulse'
-                    : 'bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 shadow-lg'
-                }`}
-              >
-                {isProcessing ? (
-                  <Loader className="w-6 h-6 text-white animate-spin" />
-                ) : isRecording ? (
-                  <MicOff className="w-6 h-6 text-white" />
-                ) : (
-                  <Mic className="w-6 h-6 text-white" />
-                )}
-              </button>
-              
-              {isRecording && (
-                <div className="absolute -inset-2 border-4 border-red-400 rounded-full animate-ping opacity-50"></div>
-              )}
-            </div>
-          </div>
-          
-          {audioBlob && (
-            <div className="flex justify-center gap-3">
-              <button
-                onClick={clearRecording}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-colors"
-              >
-                Clear
-              </button>
-              <button
-                onClick={handleVoiceSubmit}
-                className="px-6 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all"
-              >
-                Send Voice Message
-              </button>
-            </div>
-          )}
-          
-          <p className="text-sm text-gray-600 mt-3">
-            {isRecording 
-              ? 'Recording... Click to stop' 
-              : audioBlob 
-                ? 'Voice message ready to send'
-                : 'Click to record voice message'
-            }
-          </p>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export { VoiceChatInterface, VoiceSettingsModal, VoiceMessage, VoiceInputBox };
-
-export default AICompanionApp;
