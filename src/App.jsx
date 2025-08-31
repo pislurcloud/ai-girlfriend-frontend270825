@@ -1431,3 +1431,14 @@ const AICompanionApp = () => {
               </button>
             </div>
           </div>
+        )}
+      </div>
+
+      {/* Modals */}
+      {showCreateModal && <CreateCharacterModal />}
+      {showVoiceSettings && <VoiceSettingsModal />}
+    </div>
+  );
+};
+
+export default AICompanionApp;
