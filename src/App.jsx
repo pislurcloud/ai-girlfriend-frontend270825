@@ -412,7 +412,7 @@ const AICompanionApp = () => {
   const updateVoiceSettings = async (voiceData) => {
     try {
       setIsLoading(true);
-      await apiCall(`/characters/${voiceData.character_id}/voice-config`, 'PUT', voiceData, user);
+      await apiCall(`/characters/${voiceData.character_id}/voice-settings`, 'PUT', voiceData, user);
       await loadCharacters(); // Reload to get updated voice config
       setShowVoiceSettings(false);
     } catch (error) {
