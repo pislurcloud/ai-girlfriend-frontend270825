@@ -10,6 +10,297 @@ const apiCall = async (endpoint, method = 'GET', data = null, user = null) => {
       headers: { 'Content-Type': 'application/json' }
     };
 
+  // Password Reset Modal
+  const PasswordResetModal = () => {
+    const [email, setEmail] = useState('');
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      requestPasswordReset(email);
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="bg-white rounded-3xl p-8 w-96 shadow-2xl">
+          <h2 className="text-2xl font-bold text-center mb-6">Reset Password</h2>
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {authError && (
+              <div className="p-3 bg-red-100 border border-red-300 text-red-700 rounded-lg text-sm">
+                {authError}
+              </div>
+            )}
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                placeholder="Enter your email address"
+                required
+              />
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPasswordResetModal(false);
+                  setAuthError('');
+                }}
+                className="flex-1 p-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="flex-1 p-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all disabled:opacity-50"
+              >
+                {isLoading ? 'Sending...' : 'Send Reset Email'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Edit Character Modal
+  const EditCharacterModal = () => {
+    const [formData, setFormData] = useState({
+      name: editingCharacter?.name || '',
+      style: (typeof editingCharacter?.persona === 'object' ? editingCharacter.persona.style : editingCharacter?.persona) || 'friendly and supportive',
+      bio: (typeof editingCharacter?.persona === 'object' ? editingCharacter.persona.bio : '') || '',
+      appearance: {
+        age: editingCharacter?.appearance?.age || '25',
+        gender: editingCharacter?.appearance?.gender || 'person',
+        hair_color: editingCharacter?.appearance?.hair_color || 'brown',
+        style: editingCharacter?.appearance?.style || 'modern casual',
+        clothing: editingCharacter?.appearance?.clothing || 'stylish outfit'
+      }
+    });
+
+    const handleSubmit = () => {
+      if (!formData.name.trim() || !editingCharacter?.id) return;
+      editCharacter(editingCharacter.id, formData);
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+              <Settings className="w-6 h-6 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              Edit {editingCharacter?.name}
+            </h2>
+          </div>
+          
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Basic Information */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <User className="w-5 h-5" />
+                  Basic Information
+                </h3>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Name *</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Personality Style</label>
+                <input
+                  type="text"
+                  value={formData.style}
+                  onChange={(e) => setFormData({...formData, style: e.target.value})}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Background & Interests</label>
+                <textarea
+                  value={formData.bio}
+                  onChange={(e) => setFormData({...formData, bio: e.target.value})}
+                  rows={3}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Appearance Details */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <Camera className="w-5 h-5" />
+                  Appearance Details
+                </h3>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Age</label>
+                  <input
+                    type="text"
+                    value={formData.appearance.age}
+                    onChange={(e) => setFormData({
+                      ...formData, 
+                      appearance: {...formData.appearance, age: e.target.value}
+                    })}
+                    className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Gender</label>
+                  <select
+                    value={formData.appearance.gender}
+                    onChange={(e) => setFormData({
+                      ...formData, 
+                      appearance: {...formData.appearance, gender: e.target.value}
+                    })}
+                    className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                  >
+                    <option value="person">Person</option>
+                    <option value="woman">Woman</option>
+                    <option value="man">Man</option>
+                    <option value="non-binary person">Non-binary</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Hair Color</label>
+                <select
+                  value={formData.appearance.hair_color}
+                  onChange={(e) => setFormData({
+                    ...formData, 
+                    appearance: {...formData.appearance, hair_color: e.target.value}
+                  })}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                >
+                  <option value="brown">Brown</option>
+                  <option value="black">Black</option>
+                  <option value="blonde">Blonde</option>
+                  <option value="red">Red</option>
+                  <option value="auburn">Auburn</option>
+                  <option value="silver">Silver</option>
+                  <option value="blue">Blue</option>
+                  <option value="pink">Pink</option>
+                  <option value="purple">Purple</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Style</label>
+                <select
+                  value={formData.appearance.style}
+                  onChange={(e) => setFormData({
+                    ...formData, 
+                    appearance: {...formData.appearance, style: e.target.value}
+                  })}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                >
+                  <option value="modern casual">Modern Casual</option>
+                  <option value="elegant formal">Elegant Formal</option>
+                  <option value="artistic bohemian">Artistic Bohemian</option>
+                  <option value="sporty active">Sporty Active</option>
+                  <option value="vintage retro">Vintage Retro</option>
+                  <option value="minimalist chic">Minimalist Chic</option>
+                  <option value="gothic alternative">Gothic Alternative</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Clothing</label>
+                <input
+                  type="text"
+                  value={formData.appearance.clothing}
+                  onChange={(e) => setFormData({
+                    ...formData, 
+                    appearance: {...formData.appearance, clothing: e.target.value}
+                  })}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                />
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex gap-3 mt-8">
+            <button
+              onClick={() => {
+                setShowEditModal(false);
+                setEditingCharacter(null);
+              }}
+              className="flex-1 p-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!formData.name.trim() || isLoading}
+              className="flex-1 p-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl hover:from-blue-600 hover:to-purple-600 transition-all transform hover:scale-105 disabled:opacity-50 disabled:transform-none"
+            >
+              {isLoading ? 'Updating...' : 'Update Companion'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Delete Confirmation Modal
+  const DeleteCharacterModal = () => (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white rounded-3xl p-8 w-96 shadow-2xl">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 bg-red-500 rounded-full mx-auto mb-4 flex items-center justify-center">
+            <User className="w-8 h-8 text-white" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Delete Companion</h2>
+          <p className="text-gray-600">
+            Are you sure you want to delete <strong>{deletingCharacter?.name}</strong>?
+          </p>
+          <p className="text-sm text-red-600 mt-2">
+            This action cannot be undone and will delete all conversation history.
+          </p>
+        </div>
+        
+        <div className="flex gap-3">
+          <button
+            onClick={() => {
+              setShowDeleteModal(false);
+              setDeletingCharacter(null);
+            }}
+            className="flex-1 p-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => deleteCharacter(deletingCharacter?.id)}
+            disabled={isLoading}
+            className="flex-1 p-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all disabled:opacity-50"
+          >
+            {isLoading ? 'Deleting...' : 'Delete Forever'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
     if (user?.token) {
       config.headers.Authorization = `Bearer ${user.token}`;
     }
@@ -37,6 +328,11 @@ const AICompanionApp = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(true);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
+  const [editingCharacter, setEditingCharacter] = useState(null);
+  const [deletingCharacter, setDeletingCharacter] = useState(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const messagesEndRef = useRef(null);
 
@@ -215,8 +511,79 @@ const AICompanionApp = () => {
     }
   };
 
-  // Fixed: Use request body approach for avatar generation
-  const generateCharacterAvatar = async (characterId) => {
+  // Enhanced character management functions
+  const editCharacter = async (characterId, characterData) => {
+    if (!user?.id) {
+      alert('User not authenticated');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      const payload = {
+        user_id: user.id,
+        name: characterData.name,
+        persona: {
+          name: characterData.name,
+          style: characterData.style,
+          bio: characterData.bio
+        },
+        appearance: characterData.appearance || {}
+      };
+
+      await apiCall(`/characters/${characterId}`, 'PUT', payload, user);
+      setShowEditModal(false);
+      setEditingCharacter(null);
+      await loadCharacters();
+    } catch (error) {
+      console.error('Character edit error:', error);
+      alert('Failed to update character. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteCharacter = async (characterId) => {
+    if (!user?.id) {
+      alert('User not authenticated');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      await apiCall(`/characters/${characterId}`, 'DELETE', { user_id: user.id }, user);
+      
+      // If we're deleting the currently selected character, clear selection
+      if (selectedCharacter?.id === characterId) {
+        setSelectedCharacter(null);
+        setMessages([]);
+      }
+      
+      setShowDeleteModal(false);
+      setDeletingCharacter(null);
+      await loadCharacters();
+    } catch (error) {
+      console.error('Character delete error:', error);
+      alert('Failed to delete character. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const requestPasswordReset = async (email) => {
+    try {
+      setIsLoading(true);
+      setAuthError('');
+      await apiCall('/users/reset-password', 'POST', { email });
+      alert('Password reset instructions sent to your email!');
+      setShowPasswordResetModal(false);
+    } catch (error) {
+      setAuthError('Failed to send reset email. Please check your email address.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
     if (!user?.id) {
       console.error('No user ID available for avatar generation');
       alert('User not authenticated');
@@ -348,6 +715,18 @@ const AICompanionApp = () => {
                   : 'Already have an account? Sign in'
                 }
               </button>
+              
+              {authMode === 'login' && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordResetModal(true)}
+                    className="text-gray-500 hover:text-gray-700 text-xs"
+                  >
+                    Forgot your password?
+                  </button>
+                </div>
+              )}
             </div>
           </form>
         </div>
@@ -649,28 +1028,65 @@ const AICompanionApp = () => {
                     </div>
                   </div>
                   
-                  {/* Generate Avatar Button */}
-                  {!character.avatar_url && (
+                  {/* Character Actions */}
+                  <div className="flex gap-1">
+                    {/* Generate Avatar Button */}
+                    {!character.avatar_url && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          generateCharacterAvatar(character.id);
+                        }}
+                        disabled={isGeneratingImage}
+                        className={`p-2 rounded-lg transition-all ${
+                          selectedCharacter?.id === character.id 
+                            ? 'bg-white/20 hover:bg-white/30 text-white' 
+                            : 'bg-purple-100 hover:bg-purple-200 text-purple-600'
+                        } ${isGeneratingImage ? 'opacity-50' : ''}`}
+                        title="Generate Avatar"
+                      >
+                        {isGeneratingImage ? (
+                          <Loader className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Camera className="w-4 h-4" />
+                        )}
+                      </button>
+                    )}
+                    
+                    {/* Edit Button */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        generateCharacterAvatar(character.id);
+                        setEditingCharacter(character);
+                        setShowEditModal(true);
                       }}
-                      disabled={isGeneratingImage}
                       className={`p-2 rounded-lg transition-all ${
                         selectedCharacter?.id === character.id 
                           ? 'bg-white/20 hover:bg-white/30 text-white' 
-                          : 'bg-purple-100 hover:bg-purple-200 text-purple-600'
-                      } ${isGeneratingImage ? 'opacity-50' : ''}`}
-                      title="Generate Avatar"
+                          : 'bg-blue-100 hover:bg-blue-200 text-blue-600'
+                      }`}
+                      title="Edit Character"
                     >
-                      {isGeneratingImage ? (
-                        <Loader className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Camera className="w-4 h-4" />
-                      )}
+                      <Settings className="w-4 h-4" />
                     </button>
-                  )}
+                    
+                    {/* Delete Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletingCharacter(character);
+                        setShowDeleteModal(true);
+                      }}
+                      className={`p-2 rounded-lg transition-all ${
+                        selectedCharacter?.id === character.id 
+                          ? 'bg-white/20 hover:bg-red-300 text-white hover:text-red-800' 
+                          : 'bg-red-100 hover:bg-red-200 text-red-600'
+                      }`}
+                      title="Delete Character"
+                    >
+                      <User className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -871,6 +1287,9 @@ const AICompanionApp = () => {
 
       {/* Modals */}
       {showCreateModal && <CreateCharacterModal />}
+      {showEditModal && <EditCharacterModal />}
+      {showDeleteModal && <DeleteCharacterModal />}
+      {showPasswordResetModal && <PasswordResetModal />}
     </div>
   );
 };
