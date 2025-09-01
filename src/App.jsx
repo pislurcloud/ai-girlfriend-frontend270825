@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Plus, User, Bot, Settings, Image, Mic, MicOff, Camera, Palette, Loader } from 'lucide-react';
+import { Send, Plus, User, Bot, Settings, Image, Mic, MicOff, Camera, Palette, Loader, Volume2 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
@@ -28,6 +28,21 @@ const apiCall = async (endpoint, method = 'GET', data = null, user = null) => {
   }
 };
 
+const VOICE_OPTIONS = [
+  { id: 'en-US-Studio-O', label: 'English (US) - Studio O' },
+  { id: 'en-US-Studio-A', label: 'English (US) - Studio A' },
+  { id: 'en-GB-Studio-O', label: 'English (UK) - Studio O' },
+  { id: 'en-AU-Studio-O', label: 'English (Australia) - Studio O' },
+  { id: 'fr-FR-Studio-O', label: 'French - Studio O' },
+  { id: 'es-ES-Studio-O', label: 'Spanish - Studio O' },
+  { id: 'de-DE-Studio-O', label: 'German - Studio O' },
+  { id: 'it-IT-Studio-O', label: 'Italian - Studio O' },
+  { id: 'pt-BR-Studio-O', label: 'Portuguese (Brazil) - Studio O' },
+  { id: 'zh-CN-Studio-O', label: 'Chinese (Mandarin) - Studio O' },
+  { id: 'ja-JP-Studio-O', label: 'Japanese - Studio O' },
+  { id: 'ko-KR-Studio-O', label: 'Korean - Studio O' },
+];
+
 const AICompanionApp = () => {
   const [user, setUser] = useState(null);
   const [characters, setCharacters] = useState([]);
@@ -38,6 +53,12 @@ const AICompanionApp = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(true);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
+  const mediaRecorder = useRef(null);
+  const audioChunks = useRef([]);
+  const synthesis = window.speechSynthesis;
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -145,37 +166,56 @@ const AICompanionApp = () => {
     }
   };
 
-  const sendMessage = async () => {
-    if (!inputMessage.trim() || !selectedCharacter || !user) return;
-
-    const userMessage = inputMessage.trim();
-    setInputMessage('');
-    setMessages(prev => [...prev, { sender: 'user', content: userMessage }]);
-    setIsLoading(true);
-
+  const sendMessage = async (text, audio = null) => {
+    if ((!text && !audio) || !selectedCharacter || !user) return;
+  
     try {
-      const response = await apiCall('/chat', 'POST', {
-        user_id: user.id,
-        character_id: selectedCharacter.id,
-        message: userMessage
-      }, user);
-
-      const aiMessage = { 
-        sender: 'ai', 
-        content: response.reply || 'Sorry, I didn\'t understand that.' 
+      setIsLoading(true);
+      
+      // Create message object with timestamp
+      const userMessage = {
+        sender: 'user',
+        content: text || '🎤 Voice message',
+        audio: audio || null,
+        timestamp: new Date().toISOString()
       };
       
-      // Add image if AI generated one
-      if (response.image_url) {
-        aiMessage.image_url = response.image_url;
-      }
-
+      // Add user message to chat immediately
+      setMessages(prev => [...prev, userMessage]);
+      
+      // Prepare data for API call
+      const messageData = {
+        user_id: user.id,
+        character_id: selectedCharacter.id,
+        message: text || '',
+        audio: audio || undefined
+      };
+  
+      // Send to backend
+      const response = await apiCall('/chat', 'POST', messageData, user);
+      
+      // Add AI response to chat
+      const aiMessage = {
+        sender: 'ai',
+        content: response.reply,
+        image_url: response.image_url,
+        timestamp: new Date().toISOString()
+      };
+      
       setMessages(prev => [...prev, aiMessage]);
+  
+      // Speak the AI's response if voice settings are available
+      if (selectedCharacter.voiceSettings) {
+        speakText(response.reply, selectedCharacter.voiceSettings);
+      }
+  
     } catch (error) {
-      console.error('Chat error:', error);
+      console.error('Error sending message:', error);
+      // Show error to user
       setMessages(prev => [...prev, { 
-        sender: 'ai', 
-        content: 'Sorry, I\'m having trouble responding right now.' 
+        sender: 'system', 
+        content: 'Failed to send message. Please try again.',
+        timestamp: new Date().toISOString()
       }]);
     } finally {
       setIsLoading(false);
@@ -201,6 +241,7 @@ const AICompanionApp = () => {
           bio: characterData.bio
         },
         appearance: characterData.appearance || {},
+        voiceSettings: characterData.voiceSettings || {},
         generate_avatar: characterData.generateAvatar !== false
       };
 
@@ -250,6 +291,93 @@ const AICompanionApp = () => {
     setSelectedCharacter(character);
     loadConversation(character.id);
   };
+
+  // Voice recording functions
+  const toggleRecording = async () => {
+    if (!isRecording) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder.current = new MediaRecorder(stream);
+        audioChunks.current = [];
+        
+        mediaRecorder.current.ondataavailable = (event) => {
+          audioChunks.current.push(event.data);
+        };
+        
+        mediaRecorder.current.onstop = async () => {
+          const audioBlob = new Blob(audioChunks.current, { type: 'audio/wav' });
+          const reader = new FileReader();
+          reader.readAsDataURL(audioBlob);
+          reader.onloadend = async () => {
+            const base64Audio = reader.result;
+            await sendMessage('', base64Audio);
+          };
+          
+          // Stop all tracks in the stream
+          stream.getTracks().forEach(track => track.stop());
+        };
+        
+        mediaRecorder.current.start();
+        setIsRecording(true);
+      } catch (error) {
+        console.error('Error accessing microphone:', error);
+        alert('Could not access microphone. Please check permissions.');
+      }
+    } else {
+      if (mediaRecorder.current) {
+        mediaRecorder.current.stop();
+        setIsRecording(false);
+      }
+    }
+  };
+
+  // Text-to-speech function
+  const speakText = (text, voiceSettings = {}) => {
+    if (!text || !synthesis) return;
+    
+    // Stop any ongoing speech
+    synthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Set voice settings
+    const voices = synthesis.getVoices();
+    const selectedVoice = voices.find(v => v.voiceURI === (voiceSettings.voiceId || 'en-US-Studio-O'));
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    }
+    
+    utterance.rate = voiceSettings.speed || 1.0;
+    utterance.pitch = voiceSettings.pitch || 1.0;
+    
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = (e) => {
+      console.error('Speech synthesis error:', e);
+      setIsSpeaking(false);
+    };
+    
+    synthesis.speak(utterance);
+  };
+
+  // Load voices when component mounts
+  useEffect(() => {
+    if (synthesis) {
+      const loadVoices = () => {
+        const voices = synthesis.getVoices();
+        if (voices.length > 0) {
+          console.log('Voices loaded:', voices);
+        }
+      };
+      
+      synthesis.onvoiceschanged = loadVoices;
+      loadVoices();
+      
+      return () => {
+        synthesis.onvoiceschanged = null;
+      };
+    }
+  }, []);
 
   // Login Modal Component
   const LoginModal = () => {
@@ -367,6 +495,11 @@ const AICompanionApp = () => {
         hair_color: 'brown',
         style: 'modern casual',
         clothing: 'stylish outfit'
+      },
+      voiceSettings: {
+        voiceId: 'en-US-Studio-O',
+        speed: 1.0,
+        pitch: 1.0
       },
       generateAvatar: true
     });
@@ -544,6 +677,80 @@ const AICompanionApp = () => {
             </div>
           </div>
           
+          <div className="mt-6 border-t pt-4">
+            <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <Volume2 className="w-5 h-5" />
+              Voice Settings
+            </h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Voice
+                </label>
+                <select
+                  value={formData.voiceSettings.voiceId}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    voiceSettings: {
+                      ...formData.voiceSettings,
+                      voiceId: e.target.value
+                    }
+                  })}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                >
+                  {VOICE_OPTIONS.map(option => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Speed: {formData.voiceSettings.speed.toFixed(1)}x
+                </label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.1"
+                  value={formData.voiceSettings.speed}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    voiceSettings: {
+                      ...formData.voiceSettings,
+                      speed: parseFloat(e.target.value)
+                    }
+                  })}
+                  className="w-full"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Pitch: {formData.voiceSettings.pitch.toFixed(1)}x
+                </label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="1.5"
+                  step="0.1"
+                  value={formData.voiceSettings.pitch}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    voiceSettings: {
+                      ...formData.voiceSettings,
+                      pitch: parseFloat(e.target.value)
+                    }
+                  })}
+                  className="w-full"
+                />
+              </div>
+            </div>
+          </div>
+          
           <div className="flex gap-3 mt-8">
             <button
               onClick={() => setShowCreateModal(false)}
@@ -554,7 +761,7 @@ const AICompanionApp = () => {
             <button
               onClick={handleSubmit}
               disabled={!formData.name.trim() || isLoading}
-              className="flex-1 p-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 disabled:opacity-50 disabled:transform-none flex items-center justify-center gap-2"
+              className="flex-1 p-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all text-sm"
             >
               {isLoading ? (
                 <>
@@ -565,6 +772,120 @@ const AICompanionApp = () => {
                 'Create Companion'
               )}
             </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const Message = ({ message, isUser }) => {
+    const [isPlaying, setIsPlaying] = useState(false);
+    const audioRef = useRef(null);
+
+    const handlePlayAudio = () => {
+      if (audioRef.current) {
+        if (isPlaying) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        } else {
+          audioRef.current.play();
+        }
+        setIsPlaying(!isPlaying);
+      }
+    };
+
+    useEffect(() => {
+      if (audioRef.current) {
+        const handleEnded = () => setIsPlaying(false);
+        audioRef.current.addEventListener('ended', handleEnded);
+        return () => {
+          if (audioRef.current) {
+            audioRef.current.removeEventListener('ended', handleEnded);
+          }
+        };
+      }
+    }, [message.audio]);
+
+    return (
+      <div
+        className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}
+      >
+        <div
+          className={`max-w-xs lg:max-w-md xl:max-w-2xl rounded-2xl px-4 py-3 ${
+            isUser
+              ? 'bg-purple-600 text-white rounded-br-none'
+              : 'bg-gray-100 text-gray-800 rounded-bl-none'
+          }`}
+        >
+          {message.audio ? (
+            <div className="flex items-center">
+              <button
+                onClick={handlePlayAudio}
+                className={`p-2 rounded-full ${
+                  isUser ? 'bg-purple-700' : 'bg-gray-200'
+                }`}
+              >
+                {isPlaying ? (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                )}
+              </button>
+              <span className="ml-2">
+                {isUser ? 'Voice message sent' : 'Voice message received'}
+              </span>
+              <audio
+                ref={audioRef}
+                src={message.audio}
+                className="hidden"
+                preload="none"
+              />
+            </div>
+          ) : (
+            <div className="whitespace-pre-wrap">{message.content}</div>
+          )}
+          
+          {message.image_url && (
+            <div className="mt-2">
+              <img
+                src={message.image_url}
+                alt="Generated content"
+                className="rounded-lg max-w-full h-auto"
+              />
+            </div>
+          )}
+          
+          <div
+            className={`text-xs mt-1 ${
+              isUser ? 'text-purple-200' : 'text-gray-500'
+            }`}
+          >
+            {new Date(message.timestamp).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit'
+            })}
           </div>
         </div>
       </div>
@@ -739,8 +1060,15 @@ const AICompanionApp = () => {
                   <button className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors">
                     <Image className="w-5 h-5" />
                   </button>
-                  <button className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors">
-                    <Mic className="w-5 h-5" />
+                  <button
+                    onClick={toggleRecording}
+                    className={`p-2 ${isRecording ? 'bg-red-500 text-white' : 'text-gray-600 hover:text-purple-600 hover:bg-purple-50'} rounded-xl transition-colors`}
+                  >
+                    {isRecording ? (
+                      <MicOff className="w-5 h-5" />
+                    ) : (
+                      <Mic className="w-5 h-5" />
+                    )}
                   </button>
                   <button className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors">
                     <Settings className="w-5 h-5" />
@@ -773,36 +1101,7 @@ const AICompanionApp = () => {
               )}
 
               {messages.map((message, index) => (
-                <div
-                  key={index}
-                  className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-xs lg:max-w-md rounded-3xl shadow-sm ${
-                      message.sender === 'user'
-                        ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white'
-                        : 'bg-white text-gray-800 shadow-md'
-                    }`}
-                  >
-                    <div className="px-6 py-4">
-                      {message.content}
-                    </div>
-                    
-                    {/* Display AI-generated images - Made Even Larger & Clickable */}
-                    {message.image_url && (
-                      <div className="px-4 pb-4">
-                        <img 
-                          src={message.image_url}
-                          alt="AI generated content"
-                          className="w-full rounded-2xl shadow-lg cursor-pointer hover:shadow-xl transition-all transform hover:scale-105"
-                          style={{ maxWidth: '500px', minWidth: '300px' }}
-                          onClick={() => window.open(message.image_url, '_blank')}
-                          title="Click to view full size"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <Message key={index} message={message} isUser={message.sender === 'user'} />
               ))}
               
               {isLoading && (
@@ -823,30 +1122,146 @@ const AICompanionApp = () => {
             </div>
 
             {/* Message Input */}
-            <div className="p-6 bg-white/80 backdrop-blur-md border-t border-white/20">
-              <div className="flex gap-3">
+            <div className="p-4 bg-white/80 backdrop-blur-md border-t border-white/20">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={toggleRecording}
+                  className={`p-3 rounded-full ${
+                    isRecording 
+                      ? 'bg-red-500 text-white' 
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  } transition-colors`}
+                  title={isRecording ? 'Stop recording' : 'Record voice message'}
+                >
+                  {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
+                </button>
+                
                 <input
                   type="text"
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                  placeholder="Type your message... (try asking for an image!)"
-                  className="flex-1 p-4 border-2 border-gray-200 rounded-2xl focus:border-purple-500 focus:outline-none transition-colors bg-white/80"
+                  onKeyPress={(e) => e.key === 'Enter' && sendMessage(inputMessage)}
+                  placeholder="Type your message..."
+                  className="flex-1 p-3 border-2 border-gray-200 rounded-full focus:outline-none focus:border-purple-500"
                   disabled={isLoading}
                 />
+                
                 <button
-                  onClick={sendMessage}
+                  onClick={() => sendMessage(inputMessage)}
                   disabled={!inputMessage.trim() || isLoading}
-                  className="p-4 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-2xl hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 disabled:opacity-50 disabled:transform-none"
+                  className="p-3 bg-purple-600 text-white rounded-full hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Send className="w-5 h-5" />
+                  <Send size={20} />
                 </button>
               </div>
               
-              <div className="mt-2 text-center">
-                <p className="text-xs text-gray-500">
-                  💡 Ask your companion to "show me", "create", or "generate" images!
-                </p>
+              {/* Voice Settings Panel */}
+              {showVoiceSettings && (
+                <div className="mt-4 p-4 bg-white rounded-xl shadow-lg">
+                  <h3 className="text-lg font-semibold mb-3">Voice Settings</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Voice
+                      </label>
+                      <select
+                        value={selectedCharacter?.voiceSettings?.voiceId || 'en-US-Studio-O'}
+                        onChange={(e) => {
+                          if (selectedCharacter) {
+                            const updatedCharacter = {
+                              ...selectedCharacter,
+                              voiceSettings: {
+                                ...selectedCharacter.voiceSettings,
+                                voiceId: e.target.value
+                              }
+                            };
+                            setSelectedCharacter(updatedCharacter);
+                            // Update in database
+                            apiCall(
+                              `/characters/${selectedCharacter.id}`, 
+                              'PUT', 
+                              { voiceSettings: updatedCharacter.voiceSettings },
+                              user
+                            );
+                          }
+                        }}
+                        className="w-full p-2 border rounded-lg"
+                      >
+                        {VOICE_OPTIONS.map(option => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Speed: {selectedCharacter?.voiceSettings?.speed?.toFixed(1) || '1.0'}x
+                      </label>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="2"
+                        step="0.1"
+                        value={selectedCharacter?.voiceSettings?.speed || 1.0}
+                        onChange={(e) => {
+                          if (selectedCharacter) {
+                            const updatedCharacter = {
+                              ...selectedCharacter,
+                              voiceSettings: {
+                                ...selectedCharacter.voiceSettings,
+                                speed: parseFloat(e.target.value)
+                              }
+                            };
+                            setSelectedCharacter(updatedCharacter);
+                          }
+                        }}
+                        className="w-full"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Pitch: {selectedCharacter?.voiceSettings?.pitch?.toFixed(1) || '1.0'}x
+                      </label>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="1.5"
+                        step="0.1"
+                        value={selectedCharacter?.voiceSettings?.pitch || 1.0}
+                        onChange={(e) => {
+                          if (selectedCharacter) {
+                            const updatedCharacter = {
+                              ...selectedCharacter,
+                              voiceSettings: {
+                                ...selectedCharacter.voiceSettings,
+                                pitch: parseFloat(e.target.value)
+                              }
+                            };
+                            setSelectedCharacter(updatedCharacter);
+                          }
+                        }}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex justify-between items-center mt-2 px-2">
+                <button
+                  onClick={() => setShowVoiceSettings(!showVoiceSettings)}
+                  className="text-sm text-gray-500 hover:text-purple-600 flex items-center gap-1"
+                >
+                  <Volume2 size={16} />
+                  <span>Voice Settings</span>
+                </button>
+                
+                <div className="text-xs text-gray-400">
+                  {isRecording ? 'Recording...' : isSpeaking ? 'Speaking...' : ''}
+                </div>
               </div>
             </div>
           </>
