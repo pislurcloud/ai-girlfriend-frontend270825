@@ -296,68 +296,165 @@ const AICompanionApp = () => {
   const toggleRecording = async () => {
     if (!isRecording) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder.current = new MediaRecorder(stream);
+        console.log("Requesting microphone access...");
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            channelCount: 1,
+            sampleRate: 16000
+          } 
+        });
+        
+        mediaRecorder.current = new MediaRecorder(stream, {
+          mimeType: 'audio/webm;codecs=opus',
+          audioBitsPerSecond: 128000
+        });
+        
         audioChunks.current = [];
         
         mediaRecorder.current.ondataavailable = (event) => {
-          audioChunks.current.push(event.data);
+          if (event.data.size > 0) {
+            audioChunks.current.push(event.data);
+          }
         };
         
         mediaRecorder.current.onstop = async () => {
-          const audioBlob = new Blob(audioChunks.current, { type: 'audio/wav' });
-          const reader = new FileReader();
-          reader.readAsDataURL(audioBlob);
-          reader.onloadend = async () => {
-            const base64Audio = reader.result;
-            await sendMessage('', base64Audio);
-          };
-          
-          // Stop all tracks in the stream
-          stream.getTracks().forEach(track => track.stop());
+          try {
+            console.log("Stopped recording, processing audio...");
+            const audioBlob = new Blob(audioChunks.current, { type: 'audio/webm' });
+            
+            // Convert blob to base64
+            const reader = new FileReader();
+            reader.readAsDataURL(audioBlob);
+            
+            reader.onloadend = async () => {
+              const base64Audio = reader.result;
+              console.log("Audio data size:", base64Audio.length, "chars");
+              
+              // Send audio to backend
+              try {
+                setIsLoading(true);
+                const response = await apiCall('/chat', 'POST', {
+                  user_id: user?.id,
+                  character_id: selectedCharacter?.id,
+                  audio: base64Audio
+                });
+                
+                if (response.reply) {
+                  // Add AI response to chat
+                  const aiMessage = {
+                    sender: 'ai',
+                    content: response.reply,
+                    image_url: response.image_url,
+                    timestamp: new Date().toISOString()
+                  };
+                  setMessages(prev => [...prev, aiMessage]);
+                  
+                  // Speak the response
+                  if (selectedCharacter?.voiceSettings) {
+                    speakText(response.reply, selectedCharacter.voiceSettings);
+                  }
+                }
+              } catch (error) {
+                console.error('Error sending audio message:', error);
+                setMessages(prev => [...prev, {
+                  sender: 'system',
+                  content: 'Failed to process audio message. Please try again.',
+                  timestamp: new Date().toISOString()
+                }]);
+              } finally {
+                setIsLoading(false);
+              }
+            };
+            
+          } catch (error) {
+            console.error('Error processing audio:', error);
+            setMessages(prev => [...prev, {
+              sender: 'system',
+              content: 'Error processing audio. Please try again.',
+              timestamp: new Date().toISOString()
+            }]);
+          } finally {
+            // Stop all tracks in the stream
+            stream.getTracks().forEach(track => track.stop());
+          }
         };
         
-        mediaRecorder.current.start();
+        // Start recording
+        mediaRecorder.current.start(100); // Collect data every 100ms
         setIsRecording(true);
+        console.log("Recording started");
+        
       } catch (error) {
         console.error('Error accessing microphone:', error);
-        alert('Could not access microphone. Please check permissions.');
+        setMessages(prev => [...prev, {
+          sender: 'system',
+          content: 'Could not access microphone. Please check permissions.',
+          timestamp: new Date().toISOString()
+        }]);
       }
     } else {
-      if (mediaRecorder.current) {
+      // Stop recording
+      if (mediaRecorder.current && mediaRecorder.current.state !== 'inactive') {
         mediaRecorder.current.stop();
         setIsRecording(false);
+        console.log("Recording stopped");
       }
     }
   };
+  
 
   // Text-to-speech function
-  const speakText = (text, voiceSettings = {}) => {
-    if (!text || !synthesis) return;
-    
-    // Stop any ongoing speech
-    synthesis.cancel();
-    
-    const utterance = new SpeechSynthesisUtterance(text);
-    
-    // Set voice settings
-    const voices = synthesis.getVoices();
-    const selectedVoice = voices.find(v => v.voiceURI === (voiceSettings.voiceId || 'en-US-Studio-O'));
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
+  cconst speakText = (text, voiceSettings = {}) => {
+    if (!text || !window.speechSynthesis) {
+      console.warn('Speech synthesis not available or no text provided');
+      return;
     }
     
-    utterance.rate = voiceSettings.speed || 1.0;
-    utterance.pitch = voiceSettings.pitch || 1.0;
+    // Stop any ongoing speech
+    window.speechSynthesis.cancel();
     
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = (e) => {
-      console.error('Speech synthesis error:', e);
-      setIsSpeaking(false);
-    };
-    
-    synthesis.speak(utterance);
+    try {
+      const utterance = new SpeechSynthesisUtterance(text);
+      
+      // Apply voice settings with defaults
+      const settings = {
+        voiceId: 'en-US-Studio-O',
+        speed: 1.0,
+        pitch: 1.0,
+        ...voiceSettings
+      };
+      
+      // Set voice if available
+      if (window.speechSynthesis) {
+        const voices = window.speechSynthesis.getVoices();
+        const selectedVoice = voices.find(v => v.voiceURI.includes(settings.voiceId)) || 
+                            voices.find(v => v.lang.startsWith('en-'));
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
+        }
+      }
+      
+      // Apply rate (speed) and pitch
+      utterance.rate = Math.min(Math.max(settings.speed || 1.0, 0.5), 2.0);
+      utterance.pitch = Math.min(Math.max(settings.pitch || 1.0, 0.5), 2.0);
+      
+      // Error handling
+      utterance.onerror = (event) => {
+        console.error('Speech synthesis error:', event);
+      };
+      
+      utterance.onend = () => {
+        console.log('Speech finished');
+      };
+      
+      // Speak
+      window.speechSynthesis.speak(utterance);
+      
+    } catch (error) {
+      console.error('Error in speech synthesis:', error);
+    }
   };
 
   // Load voices when component mounts
