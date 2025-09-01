@@ -406,7 +406,7 @@ const AICompanionApp = () => {
   
 
   // Text-to-speech function
-  cconst speakText = (text, voiceSettings = {}) => {
+  const speakText = (text, voiceSettings = {}) => {
     if (!text || !window.speechSynthesis) {
       console.warn('Speech synthesis not available or no text provided');
       return;
