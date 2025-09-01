@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Plus, User, Bot, Settings, Image, Mic, MicOff, Camera, Palette, Loader, Volume2 } from 'lucide-react';
+import { Send, Plus, User, Bot, Settings, Image, Mic, MicOff, Camera, Palette, Loader } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
@@ -9,6 +9,297 @@ const apiCall = async (endpoint, method = 'GET', data = null, user = null) => {
       method,
       headers: { 'Content-Type': 'application/json' }
     };
+
+  // Password Reset Modal
+  const PasswordResetModal = () => {
+    const [email, setEmail] = useState('');
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      requestPasswordReset(email);
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="bg-white rounded-3xl p-8 w-96 shadow-2xl">
+          <h2 className="text-2xl font-bold text-center mb-6">Reset Password</h2>
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {authError && (
+              <div className="p-3 bg-red-100 border border-red-300 text-red-700 rounded-lg text-sm">
+                {authError}
+              </div>
+            )}
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
+                placeholder="Enter your email address"
+                required
+              />
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPasswordResetModal(false);
+                  setAuthError('');
+                }}
+                className="flex-1 p-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="flex-1 p-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all disabled:opacity-50"
+              >
+                {isLoading ? 'Sending...' : 'Send Reset Email'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  // Edit Character Modal
+  const EditCharacterModal = () => {
+    const [formData, setFormData] = useState({
+      name: editingCharacter?.name || '',
+      style: (typeof editingCharacter?.persona === 'object' ? editingCharacter.persona.style : editingCharacter?.persona) || 'friendly and supportive',
+      bio: (typeof editingCharacter?.persona === 'object' ? editingCharacter.persona.bio : '') || '',
+      appearance: {
+        age: editingCharacter?.appearance?.age || '25',
+        gender: editingCharacter?.appearance?.gender || 'person',
+        hair_color: editingCharacter?.appearance?.hair_color || 'brown',
+        style: editingCharacter?.appearance?.style || 'modern casual',
+        clothing: editingCharacter?.appearance?.clothing || 'stylish outfit'
+      }
+    });
+
+    const handleSubmit = () => {
+      if (!formData.name.trim() || !editingCharacter?.id) return;
+      editCharacter(editingCharacter.id, formData);
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+              <Settings className="w-6 h-6 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              Edit {editingCharacter?.name}
+            </h2>
+          </div>
+          
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Basic Information */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <User className="w-5 h-5" />
+                  Basic Information
+                </h3>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Name *</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Personality Style</label>
+                <input
+                  type="text"
+                  value={formData.style}
+                  onChange={(e) => setFormData({...formData, style: e.target.value})}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Background & Interests</label>
+                <textarea
+                  value={formData.bio}
+                  onChange={(e) => setFormData({...formData, bio: e.target.value})}
+                  rows={3}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Appearance Details */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <Camera className="w-5 h-5" />
+                  Appearance Details
+                </h3>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Age</label>
+                  <input
+                    type="text"
+                    value={formData.appearance.age}
+                    onChange={(e) => setFormData({
+                      ...formData, 
+                      appearance: {...formData.appearance, age: e.target.value}
+                    })}
+                    className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Gender</label>
+                  <select
+                    value={formData.appearance.gender}
+                    onChange={(e) => setFormData({
+                      ...formData, 
+                      appearance: {...formData.appearance, gender: e.target.value}
+                    })}
+                    className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                  >
+                    <option value="person">Person</option>
+                    <option value="woman">Woman</option>
+                    <option value="man">Man</option>
+                    <option value="non-binary person">Non-binary</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Hair Color</label>
+                <select
+                  value={formData.appearance.hair_color}
+                  onChange={(e) => setFormData({
+                    ...formData, 
+                    appearance: {...formData.appearance, hair_color: e.target.value}
+                  })}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                >
+                  <option value="brown">Brown</option>
+                  <option value="black">Black</option>
+                  <option value="blonde">Blonde</option>
+                  <option value="red">Red</option>
+                  <option value="auburn">Auburn</option>
+                  <option value="silver">Silver</option>
+                  <option value="blue">Blue</option>
+                  <option value="pink">Pink</option>
+                  <option value="purple">Purple</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Style</label>
+                <select
+                  value={formData.appearance.style}
+                  onChange={(e) => setFormData({
+                    ...formData, 
+                    appearance: {...formData.appearance, style: e.target.value}
+                  })}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                >
+                  <option value="modern casual">Modern Casual</option>
+                  <option value="elegant formal">Elegant Formal</option>
+                  <option value="artistic bohemian">Artistic Bohemian</option>
+                  <option value="sporty active">Sporty Active</option>
+                  <option value="vintage retro">Vintage Retro</option>
+                  <option value="minimalist chic">Minimalist Chic</option>
+                  <option value="gothic alternative">Gothic Alternative</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Clothing</label>
+                <input
+                  type="text"
+                  value={formData.appearance.clothing}
+                  onChange={(e) => setFormData({
+                    ...formData, 
+                    appearance: {...formData.appearance, clothing: e.target.value}
+                  })}
+                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition-colors"
+                />
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex gap-3 mt-8">
+            <button
+              onClick={() => {
+                setShowEditModal(false);
+                setEditingCharacter(null);
+              }}
+              className="flex-1 p-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!formData.name.trim() || isLoading}
+              className="flex-1 p-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl hover:from-blue-600 hover:to-purple-600 transition-all transform hover:scale-105 disabled:opacity-50 disabled:transform-none"
+            >
+              {isLoading ? 'Updating...' : 'Update Companion'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Delete Confirmation Modal
+  const DeleteCharacterModal = () => (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white rounded-3xl p-8 w-96 shadow-2xl">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 bg-red-500 rounded-full mx-auto mb-4 flex items-center justify-center">
+            <User className="w-8 h-8 text-white" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Delete Companion</h2>
+          <p className="text-gray-600">
+            Are you sure you want to delete <strong>{deletingCharacter?.name}</strong>?
+          </p>
+          <p className="text-sm text-red-600 mt-2">
+            This action cannot be undone and will delete all conversation history.
+          </p>
+        </div>
+        
+        <div className="flex gap-3">
+          <button
+            onClick={() => {
+              setShowDeleteModal(false);
+              setDeletingCharacter(null);
+            }}
+            className="flex-1 p-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => deleteCharacter(deletingCharacter?.id)}
+            disabled={isLoading}
+            className="flex-1 p-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all disabled:opacity-50"
+          >
+            {isLoading ? 'Deleting...' : 'Delete Forever'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
     if (user?.token) {
       config.headers.Authorization = `Bearer ${user.token}`;
@@ -28,21 +319,6 @@ const apiCall = async (endpoint, method = 'GET', data = null, user = null) => {
   }
 };
 
-const VOICE_OPTIONS = [
-  { id: 'en-US-Studio-O', label: 'English (US) - Studio O' },
-  { id: 'en-US-Studio-A', label: 'English (US) - Studio A' },
-  { id: 'en-GB-Studio-O', label: 'English (UK) - Studio O' },
-  { id: 'en-AU-Studio-O', label: 'English (Australia) - Studio O' },
-  { id: 'fr-FR-Studio-O', label: 'French - Studio O' },
-  { id: 'es-ES-Studio-O', label: 'Spanish - Studio O' },
-  { id: 'de-DE-Studio-O', label: 'German - Studio O' },
-  { id: 'it-IT-Studio-O', label: 'Italian - Studio O' },
-  { id: 'pt-BR-Studio-O', label: 'Portuguese (Brazil) - Studio O' },
-  { id: 'zh-CN-Studio-O', label: 'Chinese (Mandarin) - Studio O' },
-  { id: 'ja-JP-Studio-O', label: 'Japanese - Studio O' },
-  { id: 'ko-KR-Studio-O', label: 'Korean - Studio O' },
-];
-
 const AICompanionApp = () => {
   const [user, setUser] = useState(null);
   const [characters, setCharacters] = useState([]);
@@ -52,13 +328,12 @@ const AICompanionApp = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(true);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
+  const [editingCharacter, setEditingCharacter] = useState(null);
+  const [deletingCharacter, setDeletingCharacter] = useState(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
-  const mediaRecorder = useRef(null);
-  const audioChunks = useRef([]);
-  const synthesis = window.speechSynthesis;
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -166,56 +441,37 @@ const AICompanionApp = () => {
     }
   };
 
-  const sendMessage = async (text, audio = null) => {
-    if ((!text && !audio) || !selectedCharacter || !user) return;
-  
+  const sendMessage = async () => {
+    if (!inputMessage.trim() || !selectedCharacter || !user) return;
+
+    const userMessage = inputMessage.trim();
+    setInputMessage('');
+    setMessages(prev => [...prev, { sender: 'user', content: userMessage }]);
+    setIsLoading(true);
+
     try {
-      setIsLoading(true);
-      
-      // Create message object with timestamp
-      const userMessage = {
-        sender: 'user',
-        content: text || '🎤 Voice message',
-        audio: audio || null,
-        timestamp: new Date().toISOString()
-      };
-      
-      // Add user message to chat immediately
-      setMessages(prev => [...prev, userMessage]);
-      
-      // Prepare data for API call
-      const messageData = {
+      const response = await apiCall('/chat', 'POST', {
         user_id: user.id,
         character_id: selectedCharacter.id,
-        message: text || '',
-        audio: audio || undefined
-      };
-  
-      // Send to backend
-      const response = await apiCall('/chat', 'POST', messageData, user);
-      
-      // Add AI response to chat
-      const aiMessage = {
-        sender: 'ai',
-        content: response.reply,
-        image_url: response.image_url,
-        timestamp: new Date().toISOString()
+        message: userMessage
+      }, user);
+
+      const aiMessage = { 
+        sender: 'ai', 
+        content: response.reply || 'Sorry, I didn\'t understand that.' 
       };
       
-      setMessages(prev => [...prev, aiMessage]);
-  
-      // Speak the AI's response if voice settings are available
-      if (selectedCharacter.voiceSettings) {
-        speakText(response.reply, selectedCharacter.voiceSettings);
+      // Add image if AI generated one
+      if (response.image_url) {
+        aiMessage.image_url = response.image_url;
       }
-  
+
+      setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
-      console.error('Error sending message:', error);
-      // Show error to user
+      console.error('Chat error:', error);
       setMessages(prev => [...prev, { 
-        sender: 'system', 
-        content: 'Failed to send message. Please try again.',
-        timestamp: new Date().toISOString()
+        sender: 'ai', 
+        content: 'Sorry, I\'m having trouble responding right now.' 
       }]);
     } finally {
       setIsLoading(false);
@@ -241,7 +497,6 @@ const AICompanionApp = () => {
           bio: characterData.bio
         },
         appearance: characterData.appearance || {},
-        voiceSettings: characterData.voiceSettings || {},
         generate_avatar: characterData.generateAvatar !== false
       };
 
@@ -256,8 +511,79 @@ const AICompanionApp = () => {
     }
   };
 
-  // Fixed: Use request body approach for avatar generation
-  const generateCharacterAvatar = async (characterId) => {
+  // Enhanced character management functions
+  const editCharacter = async (characterId, characterData) => {
+    if (!user?.id) {
+      alert('User not authenticated');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      const payload = {
+        user_id: user.id,
+        name: characterData.name,
+        persona: {
+          name: characterData.name,
+          style: characterData.style,
+          bio: characterData.bio
+        },
+        appearance: characterData.appearance || {}
+      };
+
+      await apiCall(`/characters/${characterId}`, 'PUT', payload, user);
+      setShowEditModal(false);
+      setEditingCharacter(null);
+      await loadCharacters();
+    } catch (error) {
+      console.error('Character edit error:', error);
+      alert('Failed to update character. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteCharacter = async (characterId) => {
+    if (!user?.id) {
+      alert('User not authenticated');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      await apiCall(`/characters/${characterId}`, 'DELETE', { user_id: user.id }, user);
+      
+      // If we're deleting the currently selected character, clear selection
+      if (selectedCharacter?.id === characterId) {
+        setSelectedCharacter(null);
+        setMessages([]);
+      }
+      
+      setShowDeleteModal(false);
+      setDeletingCharacter(null);
+      await loadCharacters();
+    } catch (error) {
+      console.error('Character delete error:', error);
+      alert('Failed to delete character. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const requestPasswordReset = async (email) => {
+    try {
+      setIsLoading(true);
+      setAuthError('');
+      await apiCall('/users/reset-password', 'POST', { email });
+      alert('Password reset instructions sent to your email!');
+      setShowPasswordResetModal(false);
+    } catch (error) {
+      setAuthError('Failed to send reset email. Please check your email address.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
     if (!user?.id) {
       console.error('No user ID available for avatar generation');
       alert('User not authenticated');
@@ -291,190 +617,6 @@ const AICompanionApp = () => {
     setSelectedCharacter(character);
     loadConversation(character.id);
   };
-
-  // Voice recording functions
-  const toggleRecording = async () => {
-    if (!isRecording) {
-      try {
-        console.log("Requesting microphone access...");
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            channelCount: 1,
-            sampleRate: 16000
-          } 
-        });
-        
-        mediaRecorder.current = new MediaRecorder(stream, {
-          mimeType: 'audio/webm;codecs=opus',
-          audioBitsPerSecond: 128000
-        });
-        
-        audioChunks.current = [];
-        
-        mediaRecorder.current.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            audioChunks.current.push(event.data);
-          }
-        };
-        
-        mediaRecorder.current.onstop = async () => {
-          try {
-            console.log("Stopped recording, processing audio...");
-            const audioBlob = new Blob(audioChunks.current, { type: 'audio/webm' });
-            
-            // Convert blob to base64
-            const reader = new FileReader();
-            reader.readAsDataURL(audioBlob);
-            
-            reader.onloadend = async () => {
-              const base64Audio = reader.result;
-              console.log("Audio data size:", base64Audio.length, "chars");
-              
-              // Send audio to backend
-              try {
-                setIsLoading(true);
-                const response = await apiCall('/chat', 'POST', {
-                  user_id: user?.id,
-                  character_id: selectedCharacter?.id,
-                  audio: base64Audio
-                });
-                
-                if (response.reply) {
-                  // Add AI response to chat
-                  const aiMessage = {
-                    sender: 'ai',
-                    content: response.reply,
-                    image_url: response.image_url,
-                    timestamp: new Date().toISOString()
-                  };
-                  setMessages(prev => [...prev, aiMessage]);
-                  
-                  // Speak the response
-                  if (selectedCharacter?.voiceSettings) {
-                    speakText(response.reply, selectedCharacter.voiceSettings);
-                  }
-                }
-              } catch (error) {
-                console.error('Error sending audio message:', error);
-                setMessages(prev => [...prev, {
-                  sender: 'system',
-                  content: 'Failed to process audio message. Please try again.',
-                  timestamp: new Date().toISOString()
-                }]);
-              } finally {
-                setIsLoading(false);
-              }
-            };
-            
-          } catch (error) {
-            console.error('Error processing audio:', error);
-            setMessages(prev => [...prev, {
-              sender: 'system',
-              content: 'Error processing audio. Please try again.',
-              timestamp: new Date().toISOString()
-            }]);
-          } finally {
-            // Stop all tracks in the stream
-            stream.getTracks().forEach(track => track.stop());
-          }
-        };
-        
-        // Start recording
-        mediaRecorder.current.start(100); // Collect data every 100ms
-        setIsRecording(true);
-        console.log("Recording started");
-        
-      } catch (error) {
-        console.error('Error accessing microphone:', error);
-        setMessages(prev => [...prev, {
-          sender: 'system',
-          content: 'Could not access microphone. Please check permissions.',
-          timestamp: new Date().toISOString()
-        }]);
-      }
-    } else {
-      // Stop recording
-      if (mediaRecorder.current && mediaRecorder.current.state !== 'inactive') {
-        mediaRecorder.current.stop();
-        setIsRecording(false);
-        console.log("Recording stopped");
-      }
-    }
-  };
-  
-
-  // Text-to-speech function
-  const speakText = (text, voiceSettings = {}) => {
-    if (!text || !window.speechSynthesis) {
-      console.warn('Speech synthesis not available or no text provided');
-      return;
-    }
-    
-    // Stop any ongoing speech
-    window.speechSynthesis.cancel();
-    
-    try {
-      const utterance = new SpeechSynthesisUtterance(text);
-      
-      // Apply voice settings with defaults
-      const settings = {
-        voiceId: 'en-US-Studio-O',
-        speed: 1.0,
-        pitch: 1.0,
-        ...voiceSettings
-      };
-      
-      // Set voice if available
-      if (window.speechSynthesis) {
-        const voices = window.speechSynthesis.getVoices();
-        const selectedVoice = voices.find(v => v.voiceURI.includes(settings.voiceId)) || 
-                            voices.find(v => v.lang.startsWith('en-'));
-        if (selectedVoice) {
-          utterance.voice = selectedVoice;
-        }
-      }
-      
-      // Apply rate (speed) and pitch
-      utterance.rate = Math.min(Math.max(settings.speed || 1.0, 0.5), 2.0);
-      utterance.pitch = Math.min(Math.max(settings.pitch || 1.0, 0.5), 2.0);
-      
-      // Error handling
-      utterance.onerror = (event) => {
-        console.error('Speech synthesis error:', event);
-      };
-      
-      utterance.onend = () => {
-        console.log('Speech finished');
-      };
-      
-      // Speak
-      window.speechSynthesis.speak(utterance);
-      
-    } catch (error) {
-      console.error('Error in speech synthesis:', error);
-    }
-  };
-
-  // Load voices when component mounts
-  useEffect(() => {
-    if (synthesis) {
-      const loadVoices = () => {
-        const voices = synthesis.getVoices();
-        if (voices.length > 0) {
-          console.log('Voices loaded:', voices);
-        }
-      };
-      
-      synthesis.onvoiceschanged = loadVoices;
-      loadVoices();
-      
-      return () => {
-        synthesis.onvoiceschanged = null;
-      };
-    }
-  }, []);
 
   // Login Modal Component
   const LoginModal = () => {
@@ -573,6 +715,18 @@ const AICompanionApp = () => {
                   : 'Already have an account? Sign in'
                 }
               </button>
+              
+              {authMode === 'login' && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordResetModal(true)}
+                    className="text-gray-500 hover:text-gray-700 text-xs"
+                  >
+                    Forgot your password?
+                  </button>
+                </div>
+              )}
             </div>
           </form>
         </div>
@@ -592,11 +746,6 @@ const AICompanionApp = () => {
         hair_color: 'brown',
         style: 'modern casual',
         clothing: 'stylish outfit'
-      },
-      voiceSettings: {
-        voiceId: 'en-US-Studio-O',
-        speed: 1.0,
-        pitch: 1.0
       },
       generateAvatar: true
     });
@@ -774,80 +923,6 @@ const AICompanionApp = () => {
             </div>
           </div>
           
-          <div className="mt-6 border-t pt-4">
-            <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
-              <Volume2 className="w-5 h-5" />
-              Voice Settings
-            </h3>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Voice
-                </label>
-                <select
-                  value={formData.voiceSettings.voiceId}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    voiceSettings: {
-                      ...formData.voiceSettings,
-                      voiceId: e.target.value
-                    }
-                  })}
-                  className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none transition-colors"
-                >
-                  {VOICE_OPTIONS.map(option => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Speed: {formData.voiceSettings.speed.toFixed(1)}x
-                </label>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="2"
-                  step="0.1"
-                  value={formData.voiceSettings.speed}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    voiceSettings: {
-                      ...formData.voiceSettings,
-                      speed: parseFloat(e.target.value)
-                    }
-                  })}
-                  className="w-full"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Pitch: {formData.voiceSettings.pitch.toFixed(1)}x
-                </label>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="1.5"
-                  step="0.1"
-                  value={formData.voiceSettings.pitch}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    voiceSettings: {
-                      ...formData.voiceSettings,
-                      pitch: parseFloat(e.target.value)
-                    }
-                  })}
-                  className="w-full"
-                />
-              </div>
-            </div>
-          </div>
-          
           <div className="flex gap-3 mt-8">
             <button
               onClick={() => setShowCreateModal(false)}
@@ -858,7 +933,7 @@ const AICompanionApp = () => {
             <button
               onClick={handleSubmit}
               disabled={!formData.name.trim() || isLoading}
-              className="flex-1 p-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all text-sm"
+              className="flex-1 p-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-xl hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 disabled:opacity-50 disabled:transform-none flex items-center justify-center gap-2"
             >
               {isLoading ? (
                 <>
@@ -869,120 +944,6 @@ const AICompanionApp = () => {
                 'Create Companion'
               )}
             </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const Message = ({ message, isUser }) => {
-    const [isPlaying, setIsPlaying] = useState(false);
-    const audioRef = useRef(null);
-
-    const handlePlayAudio = () => {
-      if (audioRef.current) {
-        if (isPlaying) {
-          audioRef.current.pause();
-          audioRef.current.currentTime = 0;
-        } else {
-          audioRef.current.play();
-        }
-        setIsPlaying(!isPlaying);
-      }
-    };
-
-    useEffect(() => {
-      if (audioRef.current) {
-        const handleEnded = () => setIsPlaying(false);
-        audioRef.current.addEventListener('ended', handleEnded);
-        return () => {
-          if (audioRef.current) {
-            audioRef.current.removeEventListener('ended', handleEnded);
-          }
-        };
-      }
-    }, [message.audio]);
-
-    return (
-      <div
-        className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}
-      >
-        <div
-          className={`max-w-xs lg:max-w-md xl:max-w-2xl rounded-2xl px-4 py-3 ${
-            isUser
-              ? 'bg-purple-600 text-white rounded-br-none'
-              : 'bg-gray-100 text-gray-800 rounded-bl-none'
-          }`}
-        >
-          {message.audio ? (
-            <div className="flex items-center">
-              <button
-                onClick={handlePlayAudio}
-                className={`p-2 rounded-full ${
-                  isUser ? 'bg-purple-700' : 'bg-gray-200'
-                }`}
-              >
-                {isPlaying ? (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                ) : (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                )}
-              </button>
-              <span className="ml-2">
-                {isUser ? 'Voice message sent' : 'Voice message received'}
-              </span>
-              <audio
-                ref={audioRef}
-                src={message.audio}
-                className="hidden"
-                preload="none"
-              />
-            </div>
-          ) : (
-            <div className="whitespace-pre-wrap">{message.content}</div>
-          )}
-          
-          {message.image_url && (
-            <div className="mt-2">
-              <img
-                src={message.image_url}
-                alt="Generated content"
-                className="rounded-lg max-w-full h-auto"
-              />
-            </div>
-          )}
-          
-          <div
-            className={`text-xs mt-1 ${
-              isUser ? 'text-purple-200' : 'text-gray-500'
-            }`}
-          >
-            {new Date(message.timestamp).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit'
-            })}
           </div>
         </div>
       </div>
@@ -1067,28 +1028,65 @@ const AICompanionApp = () => {
                     </div>
                   </div>
                   
-                  {/* Generate Avatar Button */}
-                  {!character.avatar_url && (
+                  {/* Character Actions */}
+                  <div className="flex gap-1">
+                    {/* Generate Avatar Button */}
+                    {!character.avatar_url && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          generateCharacterAvatar(character.id);
+                        }}
+                        disabled={isGeneratingImage}
+                        className={`p-2 rounded-lg transition-all ${
+                          selectedCharacter?.id === character.id 
+                            ? 'bg-white/20 hover:bg-white/30 text-white' 
+                            : 'bg-purple-100 hover:bg-purple-200 text-purple-600'
+                        } ${isGeneratingImage ? 'opacity-50' : ''}`}
+                        title="Generate Avatar"
+                      >
+                        {isGeneratingImage ? (
+                          <Loader className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Camera className="w-4 h-4" />
+                        )}
+                      </button>
+                    )}
+                    
+                    {/* Edit Button */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        generateCharacterAvatar(character.id);
+                        setEditingCharacter(character);
+                        setShowEditModal(true);
                       }}
-                      disabled={isGeneratingImage}
                       className={`p-2 rounded-lg transition-all ${
                         selectedCharacter?.id === character.id 
                           ? 'bg-white/20 hover:bg-white/30 text-white' 
-                          : 'bg-purple-100 hover:bg-purple-200 text-purple-600'
-                      } ${isGeneratingImage ? 'opacity-50' : ''}`}
-                      title="Generate Avatar"
+                          : 'bg-blue-100 hover:bg-blue-200 text-blue-600'
+                      }`}
+                      title="Edit Character"
                     >
-                      {isGeneratingImage ? (
-                        <Loader className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Camera className="w-4 h-4" />
-                      )}
+                      <Settings className="w-4 h-4" />
                     </button>
-                  )}
+                    
+                    {/* Delete Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletingCharacter(character);
+                        setShowDeleteModal(true);
+                      }}
+                      className={`p-2 rounded-lg transition-all ${
+                        selectedCharacter?.id === character.id 
+                          ? 'bg-white/20 hover:bg-red-300 text-white hover:text-red-800' 
+                          : 'bg-red-100 hover:bg-red-200 text-red-600'
+                      }`}
+                      title="Delete Character"
+                    >
+                      <User className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1157,15 +1155,8 @@ const AICompanionApp = () => {
                   <button className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors">
                     <Image className="w-5 h-5" />
                   </button>
-                  <button
-                    onClick={toggleRecording}
-                    className={`p-2 ${isRecording ? 'bg-red-500 text-white' : 'text-gray-600 hover:text-purple-600 hover:bg-purple-50'} rounded-xl transition-colors`}
-                  >
-                    {isRecording ? (
-                      <MicOff className="w-5 h-5" />
-                    ) : (
-                      <Mic className="w-5 h-5" />
-                    )}
+                  <button className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors">
+                    <Mic className="w-5 h-5" />
                   </button>
                   <button className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-xl transition-colors">
                     <Settings className="w-5 h-5" />
@@ -1198,7 +1189,36 @@ const AICompanionApp = () => {
               )}
 
               {messages.map((message, index) => (
-                <Message key={index} message={message} isUser={message.sender === 'user'} />
+                <div
+                  key={index}
+                  className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-xs lg:max-w-md rounded-3xl shadow-sm ${
+                      message.sender === 'user'
+                        ? 'bg-gradient-to-r from-purple-500 to-blue-500 text-white'
+                        : 'bg-white text-gray-800 shadow-md'
+                    }`}
+                  >
+                    <div className="px-6 py-4">
+                      {message.content}
+                    </div>
+                    
+                    {/* Display AI-generated images - Made Even Larger & Clickable */}
+                    {message.image_url && (
+                      <div className="px-4 pb-4">
+                        <img 
+                          src={message.image_url}
+                          alt="AI generated content"
+                          className="w-full rounded-2xl shadow-lg cursor-pointer hover:shadow-xl transition-all transform hover:scale-105"
+                          style={{ maxWidth: '500px', minWidth: '300px' }}
+                          onClick={() => window.open(message.image_url, '_blank')}
+                          title="Click to view full size"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
               ))}
               
               {isLoading && (
@@ -1219,146 +1239,30 @@ const AICompanionApp = () => {
             </div>
 
             {/* Message Input */}
-            <div className="p-4 bg-white/80 backdrop-blur-md border-t border-white/20">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={toggleRecording}
-                  className={`p-3 rounded-full ${
-                    isRecording 
-                      ? 'bg-red-500 text-white' 
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  } transition-colors`}
-                  title={isRecording ? 'Stop recording' : 'Record voice message'}
-                >
-                  {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
-                </button>
-                
+            <div className="p-6 bg-white/80 backdrop-blur-md border-t border-white/20">
+              <div className="flex gap-3">
                 <input
                   type="text"
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && sendMessage(inputMessage)}
-                  placeholder="Type your message..."
-                  className="flex-1 p-3 border-2 border-gray-200 rounded-full focus:outline-none focus:border-purple-500"
+                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                  placeholder="Type your message... (try asking for an image!)"
+                  className="flex-1 p-4 border-2 border-gray-200 rounded-2xl focus:border-purple-500 focus:outline-none transition-colors bg-white/80"
                   disabled={isLoading}
                 />
-                
                 <button
-                  onClick={() => sendMessage(inputMessage)}
+                  onClick={sendMessage}
                   disabled={!inputMessage.trim() || isLoading}
-                  className="p-3 bg-purple-600 text-white rounded-full hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="p-4 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-2xl hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 disabled:opacity-50 disabled:transform-none"
                 >
-                  <Send size={20} />
+                  <Send className="w-5 h-5" />
                 </button>
               </div>
               
-              {/* Voice Settings Panel */}
-              {showVoiceSettings && (
-                <div className="mt-4 p-4 bg-white rounded-xl shadow-lg">
-                  <h3 className="text-lg font-semibold mb-3">Voice Settings</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Voice
-                      </label>
-                      <select
-                        value={selectedCharacter?.voiceSettings?.voiceId || 'en-US-Studio-O'}
-                        onChange={(e) => {
-                          if (selectedCharacter) {
-                            const updatedCharacter = {
-                              ...selectedCharacter,
-                              voiceSettings: {
-                                ...selectedCharacter.voiceSettings,
-                                voiceId: e.target.value
-                              }
-                            };
-                            setSelectedCharacter(updatedCharacter);
-                            // Update in database
-                            apiCall(
-                              `/characters/${selectedCharacter.id}`, 
-                              'PUT', 
-                              { voiceSettings: updatedCharacter.voiceSettings },
-                              user
-                            );
-                          }
-                        }}
-                        className="w-full p-2 border rounded-lg"
-                      >
-                        {VOICE_OPTIONS.map(option => (
-                          <option key={option.id} value={option.id}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Speed: {selectedCharacter?.voiceSettings?.speed?.toFixed(1) || '1.0'}x
-                      </label>
-                      <input
-                        type="range"
-                        min="0.5"
-                        max="2"
-                        step="0.1"
-                        value={selectedCharacter?.voiceSettings?.speed || 1.0}
-                        onChange={(e) => {
-                          if (selectedCharacter) {
-                            const updatedCharacter = {
-                              ...selectedCharacter,
-                              voiceSettings: {
-                                ...selectedCharacter.voiceSettings,
-                                speed: parseFloat(e.target.value)
-                              }
-                            };
-                            setSelectedCharacter(updatedCharacter);
-                          }
-                        }}
-                        className="w-full"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Pitch: {selectedCharacter?.voiceSettings?.pitch?.toFixed(1) || '1.0'}x
-                      </label>
-                      <input
-                        type="range"
-                        min="0.5"
-                        max="1.5"
-                        step="0.1"
-                        value={selectedCharacter?.voiceSettings?.pitch || 1.0}
-                        onChange={(e) => {
-                          if (selectedCharacter) {
-                            const updatedCharacter = {
-                              ...selectedCharacter,
-                              voiceSettings: {
-                                ...selectedCharacter.voiceSettings,
-                                pitch: parseFloat(e.target.value)
-                              }
-                            };
-                            setSelectedCharacter(updatedCharacter);
-                          }
-                        }}
-                        className="w-full"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              <div className="flex justify-between items-center mt-2 px-2">
-                <button
-                  onClick={() => setShowVoiceSettings(!showVoiceSettings)}
-                  className="text-sm text-gray-500 hover:text-purple-600 flex items-center gap-1"
-                >
-                  <Volume2 size={16} />
-                  <span>Voice Settings</span>
-                </button>
-                
-                <div className="text-xs text-gray-400">
-                  {isRecording ? 'Recording...' : isSpeaking ? 'Speaking...' : ''}
-                </div>
+              <div className="mt-2 text-center">
+                <p className="text-xs text-gray-500">
+                  💡 Ask your companion to "show me", "create", or "generate" images!
+                </p>
               </div>
             </div>
           </>
@@ -1383,6 +1287,9 @@ const AICompanionApp = () => {
 
       {/* Modals */}
       {showCreateModal && <CreateCharacterModal />}
+      {showEditModal && <EditCharacterModal />}
+      {showDeleteModal && <DeleteCharacterModal />}
+      {showPasswordResetModal && <PasswordResetModal />}
     </div>
   );
 };
